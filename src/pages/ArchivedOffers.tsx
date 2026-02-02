@@ -6,6 +6,7 @@ import { ptBR } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Table,
   TableBody,
@@ -23,16 +24,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -40,15 +31,25 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Label } from '@/components/ui/label';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { StatusBadge, MetricBadge } from '@/components/MetricBadge';
 import { mockOffers, niches, countries } from '@/lib/mockData';
 import { formatCurrency, formatRoas } from '@/lib/metrics';
+import { cn } from '@/lib/utils';
 
 export default function ArchivedOffers() {
   const navigate = useNavigate();
@@ -58,9 +59,25 @@ export default function ArchivedOffers() {
   const [periodFilter, setPeriodFilter] = useState<string>('all');
   const [customDateRange, setCustomDateRange] = useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isRestoreDialogOpen, setIsRestoreDialogOpen] = useState(false);
   const [selectedOffer, setSelectedOffer] = useState<typeof mockOffers[0] | null>(null);
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
+
+  // Edit Sheet State
+  const [isEditSheetOpen, setIsEditSheetOpen] = useState(false);
+  const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
+  const [editingOffer, setEditingOffer] = useState<typeof mockOffers[0] | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editNiche, setEditNiche] = useState('');
+  const [editCountry, setEditCountry] = useState('');
+  const [editStatus, setEditStatus] = useState('');
+  const [editStartDate, setEditStartDate] = useState<Date | undefined>(undefined);
+  const [editFieldsEnabled, setEditFieldsEnabled] = useState({
+    name: false,
+    niche: false,
+    country: false,
+    status: false,
+    startDate: false,
+  });
 
   // For demo purposes, show all offers as "archived"
   const archivedOffers = mockOffers.filter((offer) => {
@@ -76,9 +93,21 @@ export default function ArchivedOffers() {
     setIsDeleteDialogOpen(true);
   };
 
-  const handleRestoreClick = (offer: typeof mockOffers[0]) => {
-    setSelectedOffer(offer);
-    setIsRestoreDialogOpen(true);
+  const openEditSheet = (offer: typeof mockOffers[0]) => {
+    setEditingOffer(offer);
+    setEditName(offer.name);
+    setEditNiche(offer.niche);
+    setEditCountry(offer.country);
+    setEditStatus('archived');
+    setEditStartDate(new Date(offer.createdAt));
+    setEditFieldsEnabled({
+      name: false,
+      niche: false,
+      country: false,
+      status: false,
+      startDate: false,
+    });
+    setIsEditSheetOpen(true);
   };
 
   const handleConfirmDelete = () => {
@@ -90,10 +119,14 @@ export default function ArchivedOffers() {
     }
   };
 
-  const handleConfirmRestore = () => {
-    // In a real app, this would restore the offer
-    setIsRestoreDialogOpen(false);
-    setSelectedOffer(null);
+  const handleSaveEdit = () => {
+    setIsConfirmDialogOpen(true);
+  };
+
+  const handleConfirmEdit = () => {
+    setIsConfirmDialogOpen(false);
+    setIsEditSheetOpen(false);
+    setEditingOffer(null);
   };
 
   const isDeleteEnabled = selectedOffer && deleteConfirmName === selectedOffer.name;
@@ -244,7 +277,7 @@ export default function ArchivedOffers() {
                           variant="ghost" 
                           size="icon" 
                           className="h-8 w-8"
-                          onClick={() => handleRestoreClick(offer)}
+                          onClick={() => openEditSheet(offer)}
                           title="Editar oferta"
                         >
                           <Pencil className="h-4 w-4" />
@@ -315,24 +348,209 @@ export default function ArchivedOffers() {
         </DialogContent>
       </Dialog>
 
-      {/* Restore Confirmation Dialog */}
-      <AlertDialog open={isRestoreDialogOpen} onOpenChange={setIsRestoreDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Restaurar Oferta</AlertDialogTitle>
-            <AlertDialogDescription>
-              Deseja restaurar a oferta <strong>{selectedOffer?.name}</strong>? 
-              Ela voltará para a lista de ofertas ativas.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmRestore}>
-              Restaurar Oferta
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Edit Sheet */}
+      <Sheet open={isEditSheetOpen} onOpenChange={setIsEditSheetOpen}>
+        <SheetContent className="w-[500px] sm:max-w-lg">
+          <SheetHeader>
+            <SheetTitle>Editar Oferta</SheetTitle>
+            <SheetDescription>
+              Selecione os campos que deseja editar
+            </SheetDescription>
+          </SheetHeader>
+          <ScrollArea className="h-[calc(100vh-180px)] pr-4">
+            <div className="grid gap-4 py-6">
+              {/* Name field */}
+              <div className="grid gap-2">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="edit-name-check"
+                    checked={editFieldsEnabled.name}
+                    onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, name: !!checked }))}
+                  />
+                  <Label htmlFor="edit-name-check">Nome da Oferta</Label>
+                </div>
+                <Input 
+                  id="edit-name" 
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  disabled={!editFieldsEnabled.name}
+                  className={!editFieldsEnabled.name ? 'bg-muted' : ''}
+                />
+              </div>
+
+              {/* Niche and Country */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="edit-niche-check"
+                      checked={editFieldsEnabled.niche}
+                      onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, niche: !!checked }))}
+                    />
+                    <Label htmlFor="edit-niche-check">Nicho</Label>
+                  </div>
+                  <Select 
+                    value={editNiche} 
+                    onValueChange={setEditNiche}
+                    disabled={!editFieldsEnabled.niche}
+                  >
+                    <SelectTrigger className={!editFieldsEnabled.niche ? 'bg-muted' : ''}>
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {niches.map((niche) => (
+                        <SelectItem key={niche} value={niche}>{niche}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="edit-country-check"
+                      checked={editFieldsEnabled.country}
+                      onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, country: !!checked }))}
+                    />
+                    <Label htmlFor="edit-country-check">País</Label>
+                  </div>
+                  <Select 
+                    value={editCountry} 
+                    onValueChange={setEditCountry}
+                    disabled={!editFieldsEnabled.country}
+                  >
+                    <SelectTrigger className={!editFieldsEnabled.country ? 'bg-muted' : ''}>
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {countries.map((country) => (
+                        <SelectItem key={country} value={country}>{country}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Status and Start Date */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="edit-status-check"
+                      checked={editFieldsEnabled.status}
+                      onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, status: !!checked }))}
+                    />
+                    <Label htmlFor="edit-status-check">Status</Label>
+                  </div>
+                  <Select 
+                    value={editStatus} 
+                    onValueChange={setEditStatus}
+                    disabled={!editFieldsEnabled.status}
+                  >
+                    <SelectTrigger className={!editFieldsEnabled.status ? 'bg-muted' : ''}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Ativo</SelectItem>
+                      <SelectItem value="paused">Pausado</SelectItem>
+                      <SelectItem value="archived">Arquivado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="edit-start-date-check"
+                      checked={editFieldsEnabled.startDate}
+                      onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, startDate: !!checked }))}
+                    />
+                    <Label htmlFor="edit-start-date-check">Data de Início</Label>
+                  </div>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !editFieldsEnabled.startDate && 'bg-muted'
+                        )}
+                        disabled={!editFieldsEnabled.startDate}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {editStartDate ? format(editStartDate, "dd/MM/yyyy", { locale: ptBR }) : "Selecionar"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={editStartDate}
+                        onSelect={setEditStartDate}
+                        initialFocus
+                        className="pointer-events-auto"
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+
+              {/* Edit date (locked) */}
+              <div className="grid gap-2">
+                <Label className="text-muted-foreground">Data de Edição</Label>
+                <Input 
+                  value={format(new Date(), "dd/MM/yyyy", { locale: ptBR })}
+                  disabled 
+                  className="bg-muted" 
+                />
+              </div>
+            </div>
+          </ScrollArea>
+          <SheetFooter className="mt-4">
+            <Button variant="outline" onClick={() => setIsEditSheetOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveEdit}>Salvar Alterações</Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      {/* Confirmation Dialog */}
+      <Dialog open={isConfirmDialogOpen} onOpenChange={setIsConfirmDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar Alterações</DialogTitle>
+            <DialogDescription>
+              Revise as informações antes de confirmar
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label className="text-muted-foreground">Nome</Label>
+              <Input value={editName} disabled className="bg-muted" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label className="text-muted-foreground">Nicho</Label>
+                <Input value={editNiche} disabled className="bg-muted" />
+              </div>
+              <div className="grid gap-2">
+                <Label className="text-muted-foreground">País</Label>
+                <Input value={editCountry} disabled className="bg-muted" />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label className="text-muted-foreground">Status</Label>
+              <div className="flex items-center">
+                <StatusBadge status={editStatus as 'active' | 'paused' | 'archived'} />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsConfirmDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleConfirmEdit}>Confirmar Alteração</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
