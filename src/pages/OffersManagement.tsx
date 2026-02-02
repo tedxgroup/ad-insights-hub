@@ -52,8 +52,9 @@ import { CreatableCombobox } from '@/components/ui/creatable-combobox';
 import { PeriodoFilter, usePeriodo, type PeriodoValue } from '@/components/PeriodoFilter';
 import { ThresholdsDialog } from '@/components/ThresholdsDialog';
 import { formatCurrency, formatRoas, getMetricStatus, getMetricClass } from '@/lib/metrics';
+import { formatDate, formatDateInput } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import {
   useOfertas,
   useCreateOferta,
@@ -85,8 +86,6 @@ interface OfertaComMetricas extends Oferta {
 
 export default function OffersManagement() {
   const navigate = useNavigate();
-  const { toast } = useToast();
-  
   // Supabase hooks
   const { data: ofertas, isLoading: isLoadingOfertas, refetch } = useOfertas();
   const { data: nichos, isLoading: isLoadingNichos } = useNichos();
@@ -249,11 +248,7 @@ export default function OffersManagement() {
 
   const handleCreateOffer = async () => {
     if (!newOfferName || !newOfferNiche || !newOfferCountry) {
-      toast({
-        title: 'Campos obrigatórios',
-        description: 'Preencha nome, nicho e país',
-        variant: 'destructive',
-      });
+      toast.error('Preencha nome, nicho e país');
       return;
     }
 
@@ -271,19 +266,12 @@ export default function OffersManagement() {
         },
       });
 
-      toast({
-        title: 'Oferta criada!',
-        description: `A oferta "${newOfferName}" foi criada com sucesso.`,
-      });
+      toast.success(`A oferta "${newOfferName}" foi criada com sucesso.`);
 
       resetNewOfferForm();
       setIsSheetOpen(false);
     } catch (error) {
-      toast({
-        title: 'Erro ao criar oferta',
-        description: error instanceof Error ? error.message : 'Erro desconhecido',
-        variant: 'destructive',
-      });
+      toast.error(error instanceof Error ? error.message : 'Erro ao criar oferta');
     }
   };
 
@@ -352,20 +340,13 @@ export default function OffersManagement() {
         updates,
       });
 
-      toast({
-        title: 'Oferta atualizada!',
-        description: 'As alterações foram salvas com sucesso.',
-      });
+      toast.success('As alterações foram salvas com sucesso.');
 
       setIsConfirmDialogOpen(false);
       setIsEditSheetOpen(false);
       setEditingOffer(null);
     } catch (error) {
-      toast({
-        title: 'Erro ao atualizar oferta',
-        description: error instanceof Error ? error.message : 'Erro desconhecido',
-        variant: 'destructive',
-      });
+      toast.error(error instanceof Error ? error.message : 'Erro ao atualizar oferta');
     }
   };
 

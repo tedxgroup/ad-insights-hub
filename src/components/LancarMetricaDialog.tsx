@@ -28,7 +28,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { toast } from "@/hooks/use-toast";
+import { toast } from 'sonner';
 import { useCriativosPorOferta, useUpsertMetricaDiaria } from "@/hooks/useSupabase";
 import type { Criativo } from "@/services/api";
 
@@ -141,11 +141,7 @@ export function LancarMetricaDialog({
 
   const handleSave = async () => {
     if (!selectedCriativo || !data) {
-      toast({
-        title: "Erro",
-        description: "Criativo e data são obrigatórios.",
-        variant: "destructive",
-      });
+      toast.error('Criativo e data são obrigatórios.');
       return;
     }
 
@@ -161,18 +157,11 @@ export function LancarMetricaDialog({
         fonte_dados: "manual",
       });
 
-      toast({
-        title: "Sucesso",
-        description: "Métricas salvas com sucesso!",
-      });
+      toast.success('Métricas salvas com sucesso!');
 
       handleOpenChange(false);
     } catch (error) {
-      toast({
-        title: "Erro",
-        description: "Falha ao salvar métricas. Tente novamente.",
-        variant: "destructive",
-      });
+      toast.error('Falha ao salvar métricas. Tente novamente.');
     }
   };
 

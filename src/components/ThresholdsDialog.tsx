@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { useUpdateOferta } from '@/hooks/useSupabase';
 import { parseThresholds, type Oferta, type Thresholds } from '@/services/api';
 import { getMetricStatus, formatRoas, formatCurrency } from '@/lib/metrics';
@@ -51,7 +51,6 @@ export function ThresholdsDialog({
   oferta,
   metricas = { roas: 0, ic: 0, cpc: 0 },
 }: ThresholdsDialogProps) {
-  const { toast } = useToast();
   const updateOfertaMutation = useUpdateOferta();
 
   // Mode: 'view' or 'edit'
@@ -126,18 +125,11 @@ export function ThresholdsDialog({
         },
       });
 
-      toast({
-        title: 'Métricas atualizadas!',
-        description: `Os thresholds da oferta "${oferta.nome}" foram atualizados com sucesso.`,
-      });
+      toast.success(`Os thresholds da oferta "${oferta.nome}" foram atualizados com sucesso.`);
 
       setMode('view');
     } catch (error) {
-      toast({
-        title: 'Erro ao atualizar',
-        description: error instanceof Error ? error.message : 'Erro desconhecido',
-        variant: 'destructive',
-      });
+      toast.error(error instanceof Error ? error.message : 'Erro ao atualizar thresholds');
     }
   };
 

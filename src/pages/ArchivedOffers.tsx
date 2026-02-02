@@ -29,7 +29,8 @@ import {
 } from '@/components/ui/select';
 import { StatusBadge } from '@/components/MetricBadge';
 import { PeriodoFilter, usePeriodo } from '@/components/PeriodoFilter';
-import { toast } from '@/hooks/use-toast';
+import { formatDate } from '@/lib/format';
+import { toast } from 'sonner';
 import {
   useOfertasArquivadas,
   useUpdateOferta,
@@ -90,16 +91,9 @@ export default function ArchivedOffers() {
         id: offer.id,
         updates: { status: 'pausado' }
       });
-      toast({
-        title: 'Oferta restaurada',
-        description: `"${offer.nome}" foi restaurada com status pausado.`,
-      });
+      toast.success(`"${offer.nome}" foi restaurada com status pausado.`);
     } catch (error) {
-      toast({
-        title: 'Erro ao restaurar',
-        description: 'Não foi possível restaurar a oferta.',
-        variant: 'destructive',
-      });
+      toast.error('Não foi possível restaurar a oferta.');
     }
   };
 
@@ -108,28 +102,18 @@ export default function ArchivedOffers() {
     
     try {
       await deleteOferta.mutateAsync(selectedOffer.id);
-      toast({
-        title: 'Oferta excluída',
-        description: `"${selectedOffer.nome}" foi excluída permanentemente.`,
-      });
+      toast.success(`"${selectedOffer.nome}" foi excluída permanentemente.`);
       setIsDeleteDialogOpen(false);
       setSelectedOffer(null);
       setDeleteConfirmName('');
     } catch (error) {
-      toast({
-        title: 'Erro ao excluir',
-        description: 'Não foi possível excluir a oferta. Verifique se não há criativos vinculados.',
-        variant: 'destructive',
-      });
+      toast.error('Não foi possível excluir a oferta. Verifique se não há criativos vinculados.');
     }
   };
 
   const handleRefresh = () => {
     refetch();
-    toast({
-      title: 'Dados atualizados',
-      description: 'Lista de ofertas arquivadas foi atualizada.',
-    });
+    toast.success('Lista de ofertas arquivadas foi atualizada.');
   };
 
   const isDeleteEnabled = selectedOffer && deleteConfirmName === selectedOffer.nome;
@@ -227,9 +211,7 @@ export default function ArchivedOffers() {
               filteredOffers.map((offer) => (
                 <TableRow key={offer.id}>
                   <TableCell>
-                    {offer.created_at 
-                      ? new Date(offer.created_at).toLocaleDateString('pt-BR')
-                      : '-'}
+                    {offer.created_at ? formatDate(offer.created_at) : '-'}
                   </TableCell>
                   <TableCell className="font-medium">{offer.nome}</TableCell>
                   <TableCell>{offer.nicho}</TableCell>
