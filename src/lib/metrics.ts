@@ -1,16 +1,23 @@
 // Metric utility functions for TrackFlow
 
-import type { OfferThresholds, HealthStatus } from './mockData';
+// Re-export formatting functions from centralized format module
+export { formatCurrency, formatNumber, formatPercentage, formatRoas, formatDate, formatDateTime, formatShortDate, copyToClipboard } from './format';
 
 export type MetricType = 'roas' | 'ic' | 'cpc';
 export type MetricStatus = 'success' | 'warning' | 'danger' | 'neutral';
+export type HealthStatus = 'success' | 'warning' | 'danger';
+
+// Type for thresholds used across the app
+export interface OfferThresholds {
+  roas: { green: number; yellow: number };
+  ic: { green: number; yellow: number };
+  cpc: { green: number; yellow: number };
+}
 
 /**
  * Get the color status for a metric value based on thresholds
- * @param value - The metric value to evaluate
- * @param metricType - The type of metric (roas, ic, cpc)
- * @param thresholds - The offer-specific thresholds
- * @returns The status color
+ * ROAS: higher is better (green if >= threshold.green)
+ * IC/CPC: lower is better (green if <= threshold.green)
  */
 export const getMetricStatus = (
   value: number,
@@ -40,37 +47,6 @@ export const getOfferHealth = (roas: number, thresholds: OfferThresholds): Healt
 };
 
 /**
- * Format currency value in BRL
- */
-export const formatCurrency = (value: number): string => {
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  }).format(value);
-};
-
-/**
- * Format a number with fixed decimals
- */
-export const formatNumber = (value: number, decimals: number = 2): string => {
-  return value.toFixed(decimals);
-};
-
-/**
- * Format percentage
- */
-export const formatPercentage = (value: number): string => {
-  return `${value.toFixed(1)}%`;
-};
-
-/**
- * Format ROAS value
- */
-export const formatRoas = (value: number): string => {
-  return value.toFixed(2);
-};
-
-/**
  * Calculate ROAS from spend and revenue
  */
 export const calculateRoas = (revenue: number, spend: number): number => {
@@ -92,10 +68,6 @@ export const calculateMC = (profit: number, revenue: number): number => {
   if (revenue === 0) return 0;
   return (profit / revenue) * 100;
 };
-
-/**
- * Get CSS class for metric status
- */
 export const getMetricClass = (status: MetricStatus): string => {
   switch (status) {
     case 'success':

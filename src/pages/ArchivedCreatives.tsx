@@ -28,7 +28,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { StatusBadge } from '@/components/MetricBadge';
-import { toast } from '@/hooks/use-toast';
+import { formatDate } from '@/lib/format';
+import { toast } from 'sonner';
 import {
   useCriativosArquivados,
   useUpdateCriativo,
@@ -96,16 +97,9 @@ export default function ArchivedCreatives() {
         id: creative.id,
         updates: { status: 'pausado' }
       });
-      toast({
-        title: 'Criativo restaurado',
-        description: `"${creative.id_unico}" foi restaurado com status pausado.`,
-      });
+      toast.success(`"${creative.id_unico}" foi restaurado com status pausado.`);
     } catch (error) {
-      toast({
-        title: 'Erro ao restaurar',
-        description: 'Não foi possível restaurar o criativo.',
-        variant: 'destructive',
-      });
+      toast.error('Não foi possível restaurar o criativo.');
     }
   };
 
@@ -114,28 +108,18 @@ export default function ArchivedCreatives() {
     
     try {
       await deleteCriativo.mutateAsync(selectedCreative.id);
-      toast({
-        title: 'Criativo excluído',
-        description: `"${selectedCreative.id_unico}" foi excluído permanentemente.`,
-      });
+      toast.success(`"${selectedCreative.id_unico}" foi excluído permanentemente.`);
       setIsDeleteDialogOpen(false);
       setSelectedCreative(null);
       setDeleteConfirmId('');
     } catch (error) {
-      toast({
-        title: 'Erro ao excluir',
-        description: 'Não foi possível excluir o criativo. Verifique se não há métricas vinculadas.',
-        variant: 'destructive',
-      });
+      toast.error('Não foi possível excluir o criativo. Verifique se não há métricas vinculadas.');
     }
   };
 
   const handleRefresh = () => {
     refetch();
-    toast({
-      title: 'Dados atualizados',
-      description: 'Lista de criativos arquivados foi atualizada.',
-    });
+    toast.success('Lista de criativos arquivados foi atualizada.');
   };
 
   const isDeleteEnabled = selectedCreative && deleteConfirmId === selectedCreative.id_unico;
@@ -241,9 +225,7 @@ export default function ArchivedCreatives() {
               filteredCreatives.map((creative) => (
                 <TableRow key={creative.id}>
                   <TableCell>
-                    {creative.created_at 
-                      ? new Date(creative.created_at).toLocaleDateString('pt-BR')
-                      : '-'}
+                    {creative.created_at ? formatDate(creative.created_at) : '-'}
                   </TableCell>
                   <TableCell>
                     <div className="h-10 w-10 rounded bg-muted flex items-center justify-center">

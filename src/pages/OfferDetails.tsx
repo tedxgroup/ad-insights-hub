@@ -26,7 +26,8 @@ import { MetricBadge } from '@/components/MetricBadge';
 import { LancarMetricaDialog } from '@/components/LancarMetricaDialog';
 import { PeriodoFilter, usePeriodo, type PeriodoValue } from '@/components/PeriodoFilter';
 import { ThresholdsDialog } from '@/components/ThresholdsDialog';
-import { formatCurrency, formatRoas, getMetricStatus, getMetricClass } from '@/lib/metrics';
+import { formatCurrency, formatRoas, getMetricStatus, getMetricClass, copyToClipboard } from '@/lib/metrics';
+import { formatDate } from '@/lib/format';
 import { parseThresholds, type Thresholds, type Criativo, type MetricaDiariaOferta } from '@/services/api';
 import { useOferta, useMetricasOferta, useCriativosPorOferta, useCopywriters } from '@/hooks/useSupabase';
 import { cn } from '@/lib/utils';
@@ -150,9 +151,8 @@ export default function OfferDetails() {
     }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast.success('ID copiado para a área de transferência');
+  const handleCopyId = (text: string) => {
+    copyToClipboard(text);
   };
 
   const filterAndSortCreatives = (criativos: Criativo[] | undefined) => {
@@ -293,7 +293,7 @@ export default function OfferDetails() {
                               variant="ghost"
                               size="icon"
                               className="h-6 w-6"
-                              onClick={() => copyToClipboard(criativo.id_unico)}
+                              onClick={() => handleCopyId(criativo.id_unico)}
                             >
                               <Copy className="h-3 w-3" />
                             </Button>
@@ -474,7 +474,7 @@ export default function OfferDetails() {
                         return (
                           <TableRow key={metric.id}>
                             <TableCell className="font-medium">
-                              {new Date(metric.data).toLocaleDateString('pt-BR')}
+                              {formatDate(metric.data)}
                             </TableCell>
                             <TableCell className="text-right">{formatCurrency(faturado)}</TableCell>
                             <TableCell className="text-right">{formatCurrency(spend)}</TableCell>

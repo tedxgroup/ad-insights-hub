@@ -1,6 +1,5 @@
 import { cn } from '@/lib/utils';
-import { getMetricStatus, getMetricBgClass, type MetricType, type MetricStatus } from '@/lib/metrics';
-import type { OfferThresholds } from '@/lib/mockData';
+import { getMetricStatus, getMetricBgClass, type MetricType, type MetricStatus, type OfferThresholds } from '@/lib/metrics';
 
 interface MetricBadgeProps {
   value: number;

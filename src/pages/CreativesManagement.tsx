@@ -44,9 +44,10 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { MetricBadge } from '@/components/MetricBadge';
 import { CreatableCombobox } from '@/components/ui/creatable-combobox';
 import { PeriodoFilter, usePeriodo, type PeriodoValue } from '@/components/PeriodoFilter';
-import { formatCurrency, formatRoas } from '@/lib/metrics';
+import { formatCurrency, formatRoas, copyToClipboard } from '@/lib/metrics';
+import { formatDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import {
   useCriativos,
   useOfertasAtivas,
@@ -119,8 +120,6 @@ function FonteBadge({ fonte }: { fonte: string }) {
 
 export default function CreativesManagement() {
   const navigate = useNavigate();
-  const { toast } = useToast();
-  
   // Supabase hooks
   const { data: criativos, isLoading: isLoadingCriativos, refetch } = useCriativos();
   const { data: criativosComMedias } = useCriativosComMedias();
@@ -274,11 +273,7 @@ export default function CreativesManagement() {
 
   const handleCreateCriativo = async () => {
     if (!newOferta || !newIdUnico || !newFonte || !newCopywriter) {
-      toast({
-        title: 'Campos obrigatórios',
-        description: 'Preencha oferta, ID único, fonte e copywriter',
-        variant: 'destructive',
-      });
+      toast.error('Preencha oferta, ID único, fonte e copywriter');
       return;
     }
 
@@ -293,19 +288,12 @@ export default function CreativesManagement() {
         observacoes: newObservacoes || null,
       });
 
-      toast({
-        title: 'Criativo cadastrado!',
-        description: `O criativo "${newIdUnico}" foi criado com sucesso.`,
-      });
+      toast.success(`O criativo "${newIdUnico}" foi criado com sucesso.`);
 
       resetNewForm();
       setIsDialogOpen(false);
     } catch (error) {
-      toast({
-        title: 'Erro ao criar criativo',
-        description: error instanceof Error ? error.message : 'Erro desconhecido',
-        variant: 'destructive',
-      });
+      toast.error(error instanceof Error ? error.message : 'Erro ao criar criativo');
     }
   };
 
@@ -361,19 +349,12 @@ export default function CreativesManagement() {
         updates,
       });
 
-      toast({
-        title: 'Criativo atualizado!',
-        description: 'As alterações foram salvas com sucesso.',
-      });
+      toast.success('As alterações foram salvas com sucesso.');
 
       setIsEditDialogOpen(false);
       setEditingCreative(null);
     } catch (error) {
-      toast({
-        title: 'Erro ao atualizar criativo',
-        description: error instanceof Error ? error.message : 'Erro desconhecido',
-        variant: 'destructive',
-      });
+      toast.error(error instanceof Error ? error.message : 'Erro ao atualizar criativo');
     }
   };
 
@@ -660,10 +641,7 @@ export default function CreativesManagement() {
                             variant="ghost"
                             size="icon"
                             className="h-6 w-6"
-                            onClick={() => {
-                              navigator.clipboard.writeText(creative.id_unico);
-                              toast({ title: 'ID copiado!' });
-                            }}
+                            onClick={() => copyToClipboard(creative.id_unico)}
                             title="Copiar ID"
                           >
                             <Copy className="h-3 w-3" />
