@@ -6,6 +6,8 @@ import { ptBR } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Table,
   TableBody,
@@ -23,16 +25,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -46,9 +38,11 @@ import {
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Label } from '@/components/ui/label';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { StatusBadge, MetricBadge } from '@/components/MetricBadge';
 import { mockCreatives, mockOffers, copywriters } from '@/lib/mockData';
 import { formatCurrency, formatRoas } from '@/lib/metrics';
+import { cn } from '@/lib/utils';
 
 export default function ArchivedCreatives() {
   const navigate = useNavigate();
@@ -59,9 +53,30 @@ export default function ArchivedCreatives() {
   const [periodFilter, setPeriodFilter] = useState<string>('all');
   const [customDateRange, setCustomDateRange] = useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isRestoreDialogOpen, setIsRestoreDialogOpen] = useState(false);
   const [selectedCreative, setSelectedCreative] = useState<typeof mockCreatives[0] | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState('');
+
+  // Edit Dialog State
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingCreative, setEditingCreative] = useState<typeof mockCreatives[0] | null>(null);
+  const [editOffer, setEditOffer] = useState('');
+  const [editId, setEditId] = useState('');
+  const [editSource, setEditSource] = useState('');
+  const [editCopywriter, setEditCopywriter] = useState('');
+  const [editStatus, setEditStatus] = useState('');
+  const [editStartDate, setEditStartDate] = useState<Date | undefined>(undefined);
+  const [editUrl, setEditUrl] = useState('');
+  const [editObservations, setEditObservations] = useState('');
+  const [editFieldsEnabled, setEditFieldsEnabled] = useState({
+    offer: false,
+    id: false,
+    source: false,
+    copywriter: false,
+    status: false,
+    startDate: false,
+    url: false,
+    observations: false,
+  });
 
   // For demo purposes, show all creatives as "archived"
   const archivedCreatives = mockCreatives.filter((creative) => {
@@ -88,9 +103,27 @@ export default function ArchivedCreatives() {
     setIsDeleteDialogOpen(true);
   };
 
-  const handleRestoreClick = (creative: typeof mockCreatives[0]) => {
-    setSelectedCreative(creative);
-    setIsRestoreDialogOpen(true);
+  const openEditDialog = (creative: typeof mockCreatives[0]) => {
+    setEditingCreative(creative);
+    setEditOffer(creative.offerId);
+    setEditId(creative.id);
+    setEditSource(creative.source);
+    setEditCopywriter(creative.copywriter || '');
+    setEditStatus('archived');
+    setEditStartDate(new Date(creative.createdAt));
+    setEditUrl('');
+    setEditObservations('');
+    setEditFieldsEnabled({
+      offer: false,
+      id: false,
+      source: false,
+      copywriter: false,
+      status: false,
+      startDate: false,
+      url: false,
+      observations: false,
+    });
+    setIsEditDialogOpen(true);
   };
 
   const handleConfirmDelete = () => {
@@ -100,12 +133,6 @@ export default function ArchivedCreatives() {
       setSelectedCreative(null);
       setDeleteConfirmId('');
     }
-  };
-
-  const handleConfirmRestore = () => {
-    // In a real app, this would restore the creative
-    setIsRestoreDialogOpen(false);
-    setSelectedCreative(null);
   };
 
   const isDeleteEnabled = selectedCreative && deleteConfirmId === selectedCreative.id;
@@ -299,7 +326,7 @@ export default function ArchivedCreatives() {
                           variant="ghost" 
                           size="icon" 
                           className="h-8 w-8"
-                          onClick={() => handleRestoreClick(creative)}
+                          onClick={() => openEditDialog(creative)}
                           title="Editar criativo"
                         >
                           <Pencil className="h-4 w-4" />
@@ -370,24 +397,235 @@ export default function ArchivedCreatives() {
         </DialogContent>
       </Dialog>
 
-      {/* Restore Confirmation Dialog */}
-      <AlertDialog open={isRestoreDialogOpen} onOpenChange={setIsRestoreDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Restaurar Criativo</AlertDialogTitle>
-            <AlertDialogDescription>
-              Deseja restaurar o criativo <strong>{selectedCreative?.id}</strong>? 
-              Ele voltará para a lista de criativos ativos.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmRestore}>
-              Restaurar Criativo
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Edit Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle>Editar Criativo</DialogTitle>
+            <DialogDescription>
+              Selecione os campos que deseja editar
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-[60vh] pr-4">
+            <div className="grid gap-4 py-4">
+              {/* Offer field */}
+              <div className="grid gap-2">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="edit-offer-check"
+                    checked={editFieldsEnabled.offer}
+                    onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, offer: !!checked }))}
+                  />
+                  <Label htmlFor="edit-offer-check">Oferta</Label>
+                </div>
+                <Select 
+                  value={editOffer} 
+                  onValueChange={setEditOffer}
+                  disabled={!editFieldsEnabled.offer}
+                >
+                  <SelectTrigger className={!editFieldsEnabled.offer ? 'bg-muted' : ''}>
+                    <SelectValue placeholder="Selecione uma oferta" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mockOffers.map((offer) => (
+                      <SelectItem key={offer.id} value={offer.id}>{offer.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* ID field */}
+              <div className="grid gap-2">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="edit-id-check"
+                    checked={editFieldsEnabled.id}
+                    onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, id: !!checked }))}
+                  />
+                  <Label htmlFor="edit-id-check">ID Único</Label>
+                </div>
+                <Input 
+                  value={editId}
+                  onChange={(e) => setEditId(e.target.value)}
+                  className={cn("font-mono", !editFieldsEnabled.id && 'bg-muted')}
+                  disabled={!editFieldsEnabled.id}
+                />
+              </div>
+
+              {/* Source and Copywriter */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="edit-source-check"
+                      checked={editFieldsEnabled.source}
+                      onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, source: !!checked }))}
+                    />
+                    <Label htmlFor="edit-source-check">Fonte</Label>
+                  </div>
+                  <Select 
+                    value={editSource} 
+                    onValueChange={setEditSource}
+                    disabled={!editFieldsEnabled.source}
+                  >
+                    <SelectTrigger className={!editFieldsEnabled.source ? 'bg-muted' : ''}>
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="FB">Facebook</SelectItem>
+                      <SelectItem value="YT">YouTube</SelectItem>
+                      <SelectItem value="TT">TikTok</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="edit-copywriter-check"
+                      checked={editFieldsEnabled.copywriter}
+                      onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, copywriter: !!checked }))}
+                    />
+                    <Label htmlFor="edit-copywriter-check">Copywriter</Label>
+                  </div>
+                  <Select 
+                    value={editCopywriter} 
+                    onValueChange={setEditCopywriter}
+                    disabled={!editFieldsEnabled.copywriter}
+                  >
+                    <SelectTrigger className={!editFieldsEnabled.copywriter ? 'bg-muted' : ''}>
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {copywriters.map((copywriter) => (
+                        <SelectItem key={copywriter} value={copywriter}>{copywriter}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Status and Start Date */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="edit-status-check"
+                      checked={editFieldsEnabled.status}
+                      onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, status: !!checked }))}
+                    />
+                    <Label htmlFor="edit-status-check">Status</Label>
+                  </div>
+                  <Select 
+                    value={editStatus} 
+                    onValueChange={setEditStatus}
+                    disabled={!editFieldsEnabled.status}
+                  >
+                    <SelectTrigger className={!editFieldsEnabled.status ? 'bg-muted' : ''}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Ativo</SelectItem>
+                      <SelectItem value="testing">Em Teste</SelectItem>
+                      <SelectItem value="paused">Pausado</SelectItem>
+                      <SelectItem value="not_validated">Não Validado</SelectItem>
+                      <SelectItem value="archived">Arquivado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="edit-start-date-check"
+                      checked={editFieldsEnabled.startDate}
+                      onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, startDate: !!checked }))}
+                    />
+                    <Label htmlFor="edit-start-date-check">Data de Início</Label>
+                  </div>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !editFieldsEnabled.startDate && 'bg-muted'
+                        )}
+                        disabled={!editFieldsEnabled.startDate}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {editStartDate ? format(editStartDate, "dd/MM/yyyy", { locale: ptBR }) : "Selecionar"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={editStartDate}
+                        onSelect={setEditStartDate}
+                        initialFocus
+                        className="pointer-events-auto"
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+
+              {/* URL field */}
+              <div className="grid gap-2">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="edit-url-check"
+                    checked={editFieldsEnabled.url}
+                    onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, url: !!checked }))}
+                  />
+                  <Label htmlFor="edit-url-check">URL do Vídeo/Imagem</Label>
+                </div>
+                <Input 
+                  value={editUrl}
+                  onChange={(e) => setEditUrl(e.target.value)}
+                  placeholder="https://..."
+                  className={!editFieldsEnabled.url ? 'bg-muted' : ''}
+                  disabled={!editFieldsEnabled.url}
+                />
+              </div>
+
+              {/* Observations field */}
+              <div className="grid gap-2">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="edit-observations-check"
+                    checked={editFieldsEnabled.observations}
+                    onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, observations: !!checked }))}
+                  />
+                  <Label htmlFor="edit-observations-check">Observações</Label>
+                </div>
+                <Textarea
+                  value={editObservations}
+                  onChange={(e) => setEditObservations(e.target.value)}
+                  placeholder="Anotações sobre o criativo..."
+                  rows={3}
+                  className={!editFieldsEnabled.observations ? 'bg-muted' : ''}
+                  disabled={!editFieldsEnabled.observations}
+                />
+              </div>
+
+              {/* Edit date (locked) */}
+              <div className="grid gap-2">
+                <Label className="text-muted-foreground">Data de Edição</Label>
+                <Input 
+                  value={format(new Date(), "dd/MM/yyyy", { locale: ptBR })}
+                  disabled 
+                  className="bg-muted" 
+                />
+              </div>
+            </div>
+          </ScrollArea>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={() => setIsEditDialogOpen(false)}>Salvar Alterações</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

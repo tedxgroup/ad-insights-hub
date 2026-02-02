@@ -914,7 +914,7 @@ export default function OfferDetails() {
                       )}
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="end" side="bottom" sideOffset={8} avoidCollisions={true}>
+                  <PopoverContent className="w-auto p-0" align="start" side="bottom" sideOffset={8}>
                     <Calendar
                       mode="range"
                       selected={{ from: dailyCustomDateRange.from, to: dailyCustomDateRange.to }}
