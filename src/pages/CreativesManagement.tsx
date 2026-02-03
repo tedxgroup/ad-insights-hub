@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Pencil, Search, Image, ArrowUpDown, Copy, RefreshCw, Loader2, CalendarIcon } from 'lucide-react';
+import { Plus, Pencil, Search, ArrowUpDown, Copy, RefreshCw, Loader2, CalendarIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -42,6 +42,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MetricBadge } from '@/components/MetricBadge';
+import { VideoThumbnail } from '@/components/VideoPlayerDialog';
 import { CreatableCombobox } from '@/components/ui/creatable-combobox';
 import { PeriodoFilter, usePeriodo, type PeriodoValue } from '@/components/PeriodoFilter';
 import { formatCurrency, formatRoas, copyToClipboard } from '@/lib/metrics';
@@ -651,9 +652,7 @@ export default function CreativesManagement() {
                         }
                       </TableCell>
                       <TableCell>
-                        <div className="h-10 w-10 rounded bg-muted flex items-center justify-center">
-                          <Image className="h-4 w-4 text-muted-foreground" />
-                        </div>
+                        <VideoThumbnail url={creative.url} creativeId={creative.id_unico} />
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
