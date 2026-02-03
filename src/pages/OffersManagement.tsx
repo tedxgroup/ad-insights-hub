@@ -408,7 +408,7 @@ export default function OffersManagement() {
               <ScrollArea className="h-[calc(100vh-180px)] pr-4">
                 <div className="grid gap-4 py-6">
                   <div className="grid gap-2">
-                    <Label htmlFor="name">Nome da Oferta</Label>
+                    <Label htmlFor="name">Nome da Oferta <span className="text-destructive">*</span></Label>
                     <Input 
                       id="name" 
                       placeholder="Ex: Nutra Max Pro"
@@ -418,7 +418,7 @@ export default function OffersManagement() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="grid gap-2">
-                      <Label htmlFor="niche">Nicho</Label>
+                      <Label htmlFor="niche">Nicho <span className="text-destructive">*</span></Label>
                       <CreatableCombobox
                         options={nichosOptions}
                         value={newOfferNiche}
@@ -432,7 +432,7 @@ export default function OffersManagement() {
                       />
                     </div>
                     <div className="grid gap-2">
-                      <Label htmlFor="country">País</Label>
+                      <Label htmlFor="country">País <span className="text-destructive">*</span></Label>
                       <CreatableCombobox
                         options={paisesOptions}
                         value={newOfferCountry}
@@ -447,7 +447,7 @@ export default function OffersManagement() {
                     </div>
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="status">Status</Label>
+                    <Label htmlFor="status">Status <span className="text-destructive">*</span></Label>
                     <Select value={newOfferStatus} onValueChange={setNewOfferStatus}>
                       <SelectTrigger>
                         <SelectValue />
@@ -471,7 +471,7 @@ export default function OffersManagement() {
                       <div className="grid gap-2">
                         <Label className="flex items-center gap-2">
                           <span className="h-2 w-2 rounded-full bg-success" />
-                          Verde (ROAS &gt;)
+                          Verde (ROAS &gt;) <span className="text-destructive">*</span>
                         </Label>
                         <Input
                           type="number"
@@ -485,7 +485,7 @@ export default function OffersManagement() {
                       <div className="grid gap-2">
                         <Label className="flex items-center gap-2">
                           <span className="h-2 w-2 rounded-full bg-warning" />
-                          Amarelo (ROAS &gt;)
+                          Amarelo (ROAS &gt;) <span className="text-destructive">*</span>
                         </Label>
                         <Input
                           type="number"
@@ -514,7 +514,7 @@ export default function OffersManagement() {
                       <div className="grid gap-2">
                         <Label className="flex items-center gap-2">
                           <span className="h-2 w-2 rounded-full bg-success" />
-                          Verde (IC &lt;)
+                          Verde (IC &lt;) <span className="text-destructive">*</span>
                         </Label>
                         <Input
                           type="number"
@@ -527,7 +527,7 @@ export default function OffersManagement() {
                       <div className="grid gap-2">
                         <Label className="flex items-center gap-2">
                           <span className="h-2 w-2 rounded-full bg-warning" />
-                          Amarelo (IC &lt;)
+                          Amarelo (IC &lt;) <span className="text-destructive">*</span>
                         </Label>
                         <Input
                           type="number"
@@ -555,7 +555,7 @@ export default function OffersManagement() {
                       <div className="grid gap-2">
                         <Label className="flex items-center gap-2">
                           <span className="h-2 w-2 rounded-full bg-success" />
-                          Verde (CPC &lt;)
+                          Verde (CPC &lt;) <span className="text-destructive">*</span>
                         </Label>
                         <Input
                           type="number"
@@ -569,7 +569,7 @@ export default function OffersManagement() {
                       <div className="grid gap-2">
                         <Label className="flex items-center gap-2">
                           <span className="h-2 w-2 rounded-full bg-warning" />
-                          Amarelo (CPC &lt;)
+                          Amarelo (CPC &lt;) <span className="text-destructive">*</span>
                         </Label>
                         <Input
                           type="number"
