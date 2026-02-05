@@ -2,7 +2,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { formatCurrency, formatRoas, getOfferHealth, getHealthColor } from "@/lib/metrics";
+import { formatCurrency, formatRoas, getOfferHealth, getHealthColor, getMetricStatus } from "@/lib/metrics";
 import { parseThresholds, type Oferta } from "@/services/api";
 import type { OfferAggregatedMetrics } from "@/hooks/useSupabase";
 
@@ -70,23 +70,23 @@ export function OfferCard({ oferta, metrics, creativesCount }: OfferCardProps) {
       <div className="grid grid-cols-2 gap-4 mb-4">
         {/* Spend Column */}
         <div className="space-y-3">
-          <div className="space-y-0.5">
+          <div className="space-y-0.5 h-10">
             <p className="text-xs text-muted-foreground">Spend Total</p>
-            <p className="text-xs font-semibold">{formatCurrency(displayMetrics.spendTotal)}</p>
+            <p className="text-sm font-semibold">{formatCurrency(displayMetrics.spendTotal)}</p>
           </div>
-          <div className="space-y-0.5">
-            <p className="text-xs text-muted-foreground">Spend Hoje</p>
-            <p className="text-xs font-medium">{formatCurrency(displayMetrics.spendToday)}</p>
+          <div className="space-y-0.5 h-10">
+            <p className="text-xs text-muted-foreground">Spend de Hoje</p>
+            <p className="text-sm font-medium">{formatCurrency(displayMetrics.spendToday)}</p>
           </div>
-          <div className="space-y-0.5">
-            <p className="text-xs text-muted-foreground">Spend 7d</p>
-            <p className="text-xs font-medium">{formatCurrency(displayMetrics.spend7d)}</p>
+          <div className="space-y-0.5 h-10">
+            <p className="text-xs text-muted-foreground">Spend de 7 dias</p>
+            <p className="text-sm font-medium">{formatCurrency(displayMetrics.spend7d)}</p>
           </div>
         </div>
 
         {/* ROAS Column */}
         <div className="space-y-3">
-          <div className="space-y-0.5">
+          <div className="space-y-0.5 h-10">
             <p className="text-xs text-muted-foreground">ROAS Total</p>
             <p
               className={cn(
@@ -99,33 +99,51 @@ export function OfferCard({ oferta, metrics, creativesCount }: OfferCardProps) {
               {formatRoas(displayMetrics.roasTotal)}
             </p>
           </div>
-          <div className="space-y-0.5">
-            <p className="text-xs text-muted-foreground">ROAS Hoje</p>
-            <p className="text-sm font-medium">{formatRoas(displayMetrics.roasToday)}</p>
+          <div className="space-y-0.5 h-10">
+            <p className="text-xs text-muted-foreground">ROAS de Hoje</p>
+            <p
+              className={cn(
+                "text-sm font-medium",
+                getMetricStatus(displayMetrics.roasToday, 'roas', thresholds) === "success" && "text-success",
+                getMetricStatus(displayMetrics.roasToday, 'roas', thresholds) === "warning" && "text-warning",
+                getMetricStatus(displayMetrics.roasToday, 'roas', thresholds) === "danger" && "text-danger",
+              )}
+            >
+              {formatRoas(displayMetrics.roasToday)}
+            </p>
           </div>
-          <div className="space-y-0.5">
-            <p className="text-xs text-muted-foreground">ROAS 7d</p>
-            <p className="text-sm font-medium">{formatRoas(displayMetrics.roas7d)}</p>
+          <div className="space-y-0.5 h-10">
+            <p className="text-xs text-muted-foreground">ROAS de 7 dias</p>
+            <p
+              className={cn(
+                "text-sm font-medium",
+                getMetricStatus(displayMetrics.roas7d, 'roas', thresholds) === "success" && "text-success",
+                getMetricStatus(displayMetrics.roas7d, 'roas', thresholds) === "warning" && "text-warning",
+                getMetricStatus(displayMetrics.roas7d, 'roas', thresholds) === "danger" && "text-danger",
+              )}
+            >
+              {formatRoas(displayMetrics.roas7d)}
+            </p>
           </div>
         </div>
       </div>
 
       {/* Footer - Creative Badges */}
-      <div className="flex items-center gap-2 pt-3 border-t border-border flex-wrap">
+      <div className="flex items-center gap-1 pt-3 border-t border-border flex-nowrap">
         {oferta.status === 'arquivado' ? (
-          <Badge variant="outline" className="text-xs text-muted-foreground">
-            {creativesCount?.arquivado ?? 0} Arquivados
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 text-foreground/70">
+            Arquivados: {creativesCount?.arquivado ?? 0}
           </Badge>
         ) : (
           <>
-            <Badge variant="secondary" className="text-xs">
-              {displayCreativesCount.liberado} Liberados
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-success/10 text-success border-success/30">
+              Liberados: {displayCreativesCount.liberado}
             </Badge>
-            <Badge variant="outline" className="text-xs whitespace-nowrap">
-              {displayCreativesCount.em_teste} Em Teste
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-info/10 text-info border-info/30">
+              Em teste: {displayCreativesCount.em_teste}
             </Badge>
-            <Badge variant="outline" className="text-xs text-muted-foreground whitespace-nowrap">
-              {displayCreativesCount.nao_validado} Não Validados
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-muted text-foreground/70 border-border">
+              Não validados: {displayCreativesCount.nao_validado}
             </Badge>
           </>
         )}

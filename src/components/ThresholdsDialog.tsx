@@ -14,9 +14,10 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { useUpdateOferta } from '@/hooks/useSupabase';
+import { useUpdateOferta, useThresholdVigente } from '@/hooks/useSupabase';
 import { parseThresholds, type Oferta, type Thresholds } from '@/services/api';
 import { getMetricStatus, formatRoas, formatCurrency } from '@/lib/metrics';
+import { formatDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 interface ThresholdsDialogProps {
@@ -28,6 +29,8 @@ interface ThresholdsDialogProps {
     ic: number;
     cpc: number;
   };
+  /** Data da métrica - se fornecida, busca thresholds vigentes nessa data */
+  dataMetrica?: string;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -42,12 +45,13 @@ export function ThresholdsDialog({
   onOpenChange,
   oferta,
   metricas = { roas: 0, ic: 0, cpc: 0 },
+  dataMetrica,
 }: ThresholdsDialogProps) {
   const updateOfertaMutation = useUpdateOferta();
 
   // Mode: 'view' or 'edit'
   const [mode, setMode] = useState<'view' | 'edit'>('view');
-  
+
   // Edit form state
   const [roasVerde, setRoasVerde] = useState('');
   const [roasAmarelo, setRoasAmarelo] = useState('');
@@ -56,8 +60,20 @@ export function ThresholdsDialog({
   const [cpcVerde, setCpcVerde] = useState('');
   const [cpcAmarelo, setCpcAmarelo] = useState('');
 
-  // Current thresholds
-  const currentThresholds = parseThresholds(oferta?.thresholds);
+  // Buscar thresholds históricos se dataMetrica for fornecida
+  const { data: thresholdsHistoricos } = useThresholdVigente(
+    oferta?.id || null,
+    dataMetrica || null
+  );
+
+  // Determinar qual threshold usar: histórico (se disponível) ou atual
+  const currentThresholds = dataMetrica && thresholdsHistoricos
+    ? thresholdsHistoricos
+    : parseThresholds(oferta?.thresholds);
+
+  // Verificar se é data de hoje
+  const hoje = new Date().toISOString().split('T')[0];
+  const isHistorico = dataMetrica && dataMetrica !== hoje;
 
   // Initialize form values when dialog opens or oferta changes
   useEffect(() => {
@@ -148,7 +164,7 @@ export function ThresholdsDialog({
         <DialogHeader>
           <DialogTitle>Métricas Esperadas</DialogTitle>
           <DialogDescription>
-            Visualize e configure os thresholds de saúde da oferta
+            Visualize os thresholds de saúde da oferta
           </DialogDescription>
         </DialogHeader>
 
@@ -177,7 +193,11 @@ export function ThresholdsDialog({
             <>
               {/* Current Thresholds Display */}
               <div className="space-y-4">
-                <h4 className="text-sm font-medium">Thresholds Atuais</h4>
+                <h4 className="text-sm font-medium">
+                  {isHistorico
+                    ? `Thresholds em ${formatDate(dataMetrica!)}`
+                    : 'Thresholds Atuais'}
+                </h4>
                 
                 <div className="space-y-3">
                   {/* ROAS */}
@@ -230,10 +250,6 @@ export function ThresholdsDialog({
               <DialogFooter>
                 <Button variant="outline" onClick={handleClose}>
                   Fechar
-                </Button>
-                <Button onClick={() => setMode('edit')} className="gap-2">
-                  <Pencil className="h-4 w-4" />
-                  Atualizar Métricas
                 </Button>
               </DialogFooter>
             </>

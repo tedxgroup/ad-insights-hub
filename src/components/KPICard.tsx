@@ -90,14 +90,14 @@ export function KPIDualCard({
 }: KPIDualCardProps) {
   return (
     <Card className={cn('p-4 shadow-card', className)}>
-      <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-0">
+      <div className="flex flex-col sm:flex-row sm:items-stretch gap-3 sm:gap-0">
         {/* Left section */}
-        <div className="flex-1 space-y-1">
-          <p className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+        <div className="flex-1 space-y-0.5 min-w-0">
+          <p className="text-[11px] font-medium text-muted-foreground leading-tight">
             {leftLabel}
           </p>
           <p
-            className={cn('text-xl lg:text-2xl font-bold tracking-tight', {
+            className={cn('text-base font-bold tracking-tight', {
               'text-success': leftVariant === 'success',
               'text-warning': leftVariant === 'warning',
               'text-danger': leftVariant === 'danger',
@@ -106,18 +106,18 @@ export function KPIDualCard({
             {leftValue}
           </p>
         </div>
-        
+
         {/* Divider */}
-        <div className="hidden sm:block w-px bg-border mx-3 self-stretch" />
+        <div className="hidden sm:block w-px bg-border mx-2" />
         <div className="sm:hidden h-px bg-border w-full" />
-        
+
         {/* Right section */}
-        <div className="flex-1 space-y-1">
-          <p className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+        <div className="flex-1 space-y-0.5 min-w-0">
+          <p className="text-[11px] font-medium text-muted-foreground leading-tight">
             {rightLabel}
           </p>
           <p
-            className={cn('text-xl lg:text-2xl font-bold tracking-tight', {
+            className={cn('text-base font-bold tracking-tight', {
               'text-success': rightVariant === 'success',
               'text-warning': rightVariant === 'warning',
               'text-danger': rightVariant === 'danger',

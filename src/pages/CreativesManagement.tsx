@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Pencil, Search, ArrowUpDown, Copy, RefreshCw, Loader2, CalendarIcon } from 'lucide-react';
+import { Plus, Pencil, Search, ArrowUpDown, RefreshCw, Loader2, CalendarIcon, BarChart2, Eye } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -7,8 +7,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Badge } from '@/components/ui/badge';
 import {
   Table,
   TableBody,
@@ -24,8 +22,16 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 import {
   Select,
   SelectContent,
@@ -38,13 +44,18 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Calendar } from '@/components/ui/calendar';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MetricBadge } from '@/components/MetricBadge';
 import { VideoThumbnail } from '@/components/VideoPlayerDialog';
 import { CreatableCombobox } from '@/components/ui/creatable-combobox';
-import { StickyScrollContainer } from '@/components/StickyScrollContainer';
 import { PeriodoFilter, usePeriodo, type PeriodoValue } from '@/components/PeriodoFilter';
 import { formatCurrency, formatRoas, copyToClipboard } from '@/lib/metrics';
 import { formatDate } from '@/lib/format';
@@ -59,11 +70,13 @@ import {
   useArchiveCriativo,
   useCreateCopywriter,
   useMetricasDiariasComCriativo,
+  useThresholdsVigentesBatch,
   type MetricaDiariaComCriativo,
+  type Thresholds,
 } from '@/hooks/useSupabase';
 import { parseThresholds, type Criativo } from '@/services/api';
 
-type SortField = 'roas' | 'ic' | 'cpc' | 'ctr' | 'cpm' | 'spend' | 'conversoes' | 'cliques' | 'impressoes' | 'date' | null;
+type SortField = 'date' | null;
 type SortDirection = 'asc' | 'desc';
 
 // Status mapping
@@ -76,11 +89,11 @@ const statusLabels: Record<string, string> = {
 };
 
 const statusColors: Record<string, string> = {
-  liberado: 'bg-success/10 text-success border-success/20',
-  em_teste: 'bg-info/10 text-info border-info/20',
-  nao_validado: 'bg-muted text-muted-foreground border-border',
-  pausado: 'bg-warning/10 text-warning border-warning/20',
-  arquivado: 'bg-danger/10 text-danger border-danger/20',
+  liberado: 'bg-success/10 text-success',
+  em_teste: 'bg-info/10 text-info',
+  nao_validado: 'bg-muted text-muted-foreground',
+  pausado: 'bg-warning/10 text-warning',
+  arquivado: 'bg-danger/10 text-danger',
 };
 
 const fonteLabels: Record<string, string> = {
@@ -100,12 +113,14 @@ const fonteColors: Record<string, string> = {
 // Creative Status Badge Component
 function CreativeStatusBadge({ status }: { status: string }) {
   return (
-    <Badge
-      variant="outline"
-      className={cn("font-medium whitespace-nowrap", statusColors[status] || statusColors.nao_validado)}
+    <span
+      className={cn(
+        "inline-flex items-center rounded-md px-2 py-1 text-xs font-medium whitespace-nowrap",
+        statusColors[status] || statusColors.nao_validado
+      )}
     >
       {statusLabels[status] || status}
-    </Badge>
+    </span>
   );
 }
 
@@ -134,6 +149,22 @@ export default function CreativesManagement() {
   const { data: criativos } = useCriativos(); // Keep for edit dialog
   const { data: ofertas, isLoading: isLoadingOfertas } = useOfertasAtivas();
   const { data: copywriters, isLoading: isLoadingCopywriters } = useCopywriters();
+
+  // Extrair oferta_ids únicos das métricas para buscar thresholds históricos
+  const ofertaIdsFromMetricas = Array.from(
+    new Set(
+      (metricasDiarias || [])
+        .map(m => m.criativo?.oferta_id)
+        .filter((id): id is string => !!id)
+    )
+  );
+
+  // Buscar thresholds vigentes para o último dia do período (Opção A acordada)
+  // Para períodos agregados (7d, 30d), usa threshold do último dia
+  const { data: thresholdsMap } = useThresholdsVigentesBatch(
+    ofertaIdsFromMetricas,
+    periodo.dataFim
+  );
   
   const createCriativoMutation = useCreateCriativo();
   const updateCriativoMutation = useUpdateCriativo();
@@ -170,15 +201,6 @@ export default function CreativesManagement() {
   const [editStatus, setEditStatus] = useState('');
   const [editUrl, setEditUrl] = useState('');
   const [editObservations, setEditObservations] = useState('');
-  const [editFieldsEnabled, setEditFieldsEnabled] = useState({
-    offer: false,
-    id: false,
-    source: false,
-    copywriter: false,
-    status: false,
-    url: false,
-    observations: false,
-  });
 
   // Convert copywriters to combobox options
   const copywritersOptions = (copywriters || []).map(c => ({ value: c.nome, label: c.nome }));
@@ -206,6 +228,24 @@ export default function CreativesManagement() {
     return matchesSearch && matchesOffer && matchesSource && matchesStatus && matchesCopywriter && notArchived;
   });
 
+  // Encontrar criativos ativos que não têm métricas no período selecionado
+  const criativosComMetricas = new Set(
+    (metricasDiarias || [])
+      .filter(m => m.criativo)
+      .map(m => m.criativo!.id)
+  );
+
+  const criativosSemMetricas = (criativos || []).filter(criativo => {
+    const semMetricas = !criativosComMetricas.has(criativo.id);
+    const notArchived = criativo.status !== 'arquivado';
+    const matchesSearch = criativo.id_unico.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesOffer = offerFilter === 'all' || criativo.oferta_id === offerFilter;
+    const matchesSource = sourceFilter === 'all' || criativo.fonte === sourceFilter;
+    const matchesStatus = statusFilter === 'all' || criativo.status === statusFilter;
+    const matchesCopywriter = copywriterFilter === 'all' || criativo.copy_responsavel === copywriterFilter;
+    return semMetricas && notArchived && matchesSearch && matchesOffer && matchesSource && matchesStatus && matchesCopywriter;
+  });
+
   // Sort metrics
   const sortedMetricas = [...filteredMetricas].sort((a, b) => {
     if (!sortField) return 0;
@@ -213,42 +253,6 @@ export default function CreativesManagement() {
     let aValue: number, bValue: number;
 
     switch (sortField) {
-      case 'roas':
-        aValue = a.roas || 0;
-        bValue = b.roas || 0;
-        break;
-      case 'ic':
-        aValue = a.ic || 0;
-        bValue = b.ic || 0;
-        break;
-      case 'cpc':
-        aValue = a.cpc || 0;
-        bValue = b.cpc || 0;
-        break;
-      case 'ctr':
-        aValue = a.ctr || 0;
-        bValue = b.ctr || 0;
-        break;
-      case 'cpm':
-        aValue = a.cpm || 0;
-        bValue = b.cpm || 0;
-        break;
-      case 'spend':
-        aValue = a.spend || 0;
-        bValue = b.spend || 0;
-        break;
-      case 'conversoes':
-        aValue = a.conversoes || 0;
-        bValue = b.conversoes || 0;
-        break;
-      case 'cliques':
-        aValue = a.cliques || 0;
-        bValue = b.cliques || 0;
-        break;
-      case 'impressoes':
-        aValue = a.impressoes || 0;
-        bValue = b.impressoes || 0;
-        break;
       case 'date':
         aValue = new Date(a.data).getTime();
         bValue = new Date(b.data).getTime();
@@ -266,15 +270,23 @@ export default function CreativesManagement() {
     return offer?.nome || 'N/A';
   };
 
-  const getOfferThresholds = (oferta: { thresholds: any } | null | undefined) => {
+  // Converte Thresholds (verde/amarelo) para formato do MetricBadge (green/yellow)
+  const convertThresholdsFormat = (t: Thresholds) => ({
+    roas: { green: t.roas.verde, yellow: t.roas.amarelo },
+    ic: { green: t.ic.verde, yellow: t.ic.amarelo },
+    cpc: { green: t.cpc.verde, yellow: t.cpc.amarelo },
+  });
+
+  // Busca thresholds do histórico para uma oferta
+  // Usa thresholds vigentes no último dia do período selecionado
+  const getOfferThresholds = (ofertaId: string | null | undefined) => {
     const defaultThresholds = { roas: { green: 1.3, yellow: 1.1 }, ic: { green: 50, yellow: 60 }, cpc: { green: 1.5, yellow: 2 } };
-    if (!oferta) return defaultThresholds;
-    const t = parseThresholds(oferta.thresholds);
-    return {
-      roas: { green: t.roas.verde, yellow: t.roas.amarelo },
-      ic: { green: t.ic.verde, yellow: t.ic.amarelo },
-      cpc: { green: t.cpc.verde, yellow: t.cpc.amarelo },
-    };
+    if (!ofertaId || !thresholdsMap) return defaultThresholds;
+
+    const historicalThresholds = thresholdsMap.get(ofertaId);
+    if (!historicalThresholds) return defaultThresholds;
+
+    return convertThresholdsFormat(historicalThresholds);
   };
 
   // Get offer name from oferta_id (for edit dialog)
@@ -352,19 +364,27 @@ export default function CreativesManagement() {
     setEditStatus(creative.status || 'em_teste');
     setEditUrl(creative.url || '');
     setEditObservations(creative.observacoes || '');
-    setEditFieldsEnabled({
-      offer: false,
-      id: false,
-      source: false,
-      copywriter: false,
-      status: false,
-      url: false,
-      observations: false,
-    });
     setIsEditDialogOpen(true);
   };
 
   const handleSaveEdit = () => {
+    if (!editingCreative) return;
+
+    // Verificar se houve alteração real em algum campo
+    const hasChanges =
+      editOffer !== (editingCreative.oferta_id || '') ||
+      editId !== editingCreative.id_unico ||
+      editSource !== editingCreative.fonte ||
+      editCopywriter !== (editingCreative.copy_responsavel || '') ||
+      editStatus !== (editingCreative.status || 'em_teste') ||
+      editUrl !== (editingCreative.url || '') ||
+      editObservations !== (editingCreative.observacoes || '');
+
+    if (!hasChanges) {
+      toast.error('Nenhuma alteração foi detectada.');
+      return;
+    }
+
     setIsConfirmDialogOpen(true);
   };
 
@@ -373,14 +393,14 @@ export default function CreativesManagement() {
 
     try {
       const updates: Record<string, any> = {};
-      
-      if (editFieldsEnabled.offer) updates.oferta_id = editOffer;
-      if (editFieldsEnabled.id) updates.id_unico = editId;
-      if (editFieldsEnabled.source) updates.fonte = editSource;
-      if (editFieldsEnabled.copywriter) updates.copy_responsavel = editCopywriter;
-      if (editFieldsEnabled.status) updates.status = editStatus;
-      if (editFieldsEnabled.url) updates.url = editUrl || null;
-      if (editFieldsEnabled.observations) updates.observacoes = editObservations || null;
+
+      if (editOffer !== (editingCreative.oferta_id || '')) updates.oferta_id = editOffer;
+      if (editId !== editingCreative.id_unico) updates.id_unico = editId;
+      if (editSource !== editingCreative.fonte) updates.fonte = editSource;
+      if (editCopywriter !== (editingCreative.copy_responsavel || '')) updates.copy_responsavel = editCopywriter;
+      if (editStatus !== (editingCreative.status || 'em_teste')) updates.status = editStatus;
+      if (editUrl !== (editingCreative.url || '')) updates.url = editUrl || null;
+      if (editObservations !== (editingCreative.observacoes || '')) updates.observacoes = editObservations || null;
 
       await updateCriativoMutation.mutateAsync({
         id: editingCreative.id,
@@ -398,11 +418,15 @@ export default function CreativesManagement() {
   };
 
   const SortableHeader = ({ field, children, className }: { field: SortField; children: React.ReactNode; className?: string }) => (
-    <TableHead 
+    <TableHead
       className={cn("cursor-pointer hover:bg-muted/50 transition-colors", className)}
       onClick={() => handleSort(field)}
     >
-      <div className={cn("flex items-center gap-1", className?.includes('text-right') && "justify-end")}>
+      <div className={cn(
+        "flex items-center gap-1",
+        className?.includes('text-right') && "justify-end",
+        className?.includes('text-center') && "justify-center"
+      )}>
         {children}
         <ArrowUpDown className={cn(
           "h-3 w-3",
@@ -440,22 +464,22 @@ export default function CreativesManagement() {
             )}
             Atualizar
           </Button>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
+          <Sheet open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <SheetTrigger asChild>
               <Button className="gap-2">
                 <Plus className="h-4 w-4" />
                 Novo Criativo
               </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg max-h-[90vh]">
-              <DialogHeader>
-                <DialogTitle>Cadastro de Criativo</DialogTitle>
-                <DialogDescription>
-                  Adicione um novo criativo ao banco de dados
-                </DialogDescription>
-              </DialogHeader>
-              <ScrollArea className="max-h-[60vh] pr-4">
-                <div className="grid gap-4 py-4">
+            </SheetTrigger>
+            <SheetContent className="w-[550px] sm:max-w-xl">
+              <SheetHeader>
+                <SheetTitle>Novo Criativo</SheetTitle>
+                <SheetDescription>
+                  Cadastre um novo criativo no sistema
+                </SheetDescription>
+              </SheetHeader>
+              <ScrollArea className="h-[calc(100vh-180px)]">
+                <div className="grid gap-4 py-6 px-2">
                   <div className="grid gap-2">
                     <Label htmlFor="offer">Oferta <span className="text-destructive">*</span></Label>
                     <Select value={newOferta} onValueChange={setNewOferta}>
@@ -538,8 +562,8 @@ export default function CreativesManagement() {
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor="url">URL do Vídeo/Imagem <span className="text-destructive">*</span></Label>
-                    <Input 
-                      id="url" 
+                    <Input
+                      id="url"
                       placeholder="https://..."
                       value={newUrl}
                       onChange={(e) => setNewUrl(e.target.value)}
@@ -557,11 +581,11 @@ export default function CreativesManagement() {
                   </div>
                 </div>
               </ScrollArea>
-              <DialogFooter>
+              <SheetFooter className="mt-4">
                 <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
                   Cancelar
                 </Button>
-                <Button 
+                <Button
                   onClick={handleCreateCriativo}
                   disabled={createCriativoMutation.isPending}
                 >
@@ -570,9 +594,9 @@ export default function CreativesManagement() {
                   )}
                   Criar Criativo
                 </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+              </SheetFooter>
+            </SheetContent>
+          </Sheet>
         </div>
       </div>
 
@@ -585,11 +609,11 @@ export default function CreativesManagement() {
               placeholder="Buscar por ID..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
+              className="pl-9 bg-white dark:bg-zinc-950 border-border"
             />
           </div>
           <Select value={offerFilter} onValueChange={setOfferFilter}>
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-[140px]">
               <SelectValue placeholder="Oferta" />
             </SelectTrigger>
             <SelectContent>
@@ -600,7 +624,7 @@ export default function CreativesManagement() {
             </SelectContent>
           </Select>
           <Select value={sourceFilter} onValueChange={setSourceFilter}>
-            <SelectTrigger className="w-[130px]">
+            <SelectTrigger className="w-[140px]">
               <SelectValue placeholder="Fonte" />
             </SelectTrigger>
             <SelectContent>
@@ -612,7 +636,7 @@ export default function CreativesManagement() {
             </SelectContent>
           </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[150px]">
+            <SelectTrigger className="w-[140px]">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
@@ -624,23 +648,99 @@ export default function CreativesManagement() {
             </SelectContent>
           </Select>
           <Select value={copywriterFilter} onValueChange={setCopywriterFilter}>
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-[140px]">
               <SelectValue placeholder="Copywriter" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todos Copywriters</SelectItem>
+              <SelectItem value="all">Todas Copys</SelectItem>
               {(copywriters || []).map((copy) => (
                 <SelectItem key={copy.id} value={copy.nome}>{copy.nome}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <PeriodoFilter 
-            value={periodo} 
+          <PeriodoFilter
+            value={periodo}
             onChange={setPeriodo}
             showAllOption
           />
         </div>
       </Card>
+
+      {/* Criativos sem métricas no período */}
+      {criativosSemMetricas.length > 0 && (
+        <Card className="p-4 border-warning/50 bg-warning/5">
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 mt-0.5">
+              <div className="h-2 w-2 rounded-full bg-warning" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-sm font-medium text-foreground mb-2">
+                {criativosSemMetricas.length} criativo(s) sem métricas no período selecionado
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {criativosSemMetricas.map((criativo) => (
+                  <div
+                    key={criativo.id}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-background border cursor-pointer hover:border-primary/50 transition-colors"
+                    onClick={() => openEditDialog(criativo.id)}
+                  >
+                    <span
+                      className="font-mono text-xs cursor-pointer hover:text-primary hover:underline transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        copyToClipboard(criativo.id_unico);
+                      }}
+                      title="Clique para copiar"
+                    >
+                      {criativo.id_unico}
+                    </span>
+                    <CreativeStatusBadge status={criativo.status || 'nao_validado'} />
+                    <TooltipProvider delayDuration={100}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (criativo.oferta_id) {
+                                navigate(`/ofertas/${criativo.oferta_id}`);
+                              }
+                            }}
+                          >
+                            <Eye className="h-3 w-3" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Ver oferta e lançar métricas</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditDialog(criativo.id);
+                            }}
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Editar criativo</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                Esses criativos foram criados mas ainda não têm métricas lançadas. Clique para editar ou lance métricas para vê-los na tabela.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Loading State */}
       {isLoadingMetricas ? (
@@ -650,125 +750,151 @@ export default function CreativesManagement() {
       ) : (
         /* Table - now shows one row per criativo + day */
         <Card className="p-0">
-          <StickyScrollContainer>
-          <Table noOverflow>
+          <Table>
             <TableHeader>
               <TableRow>
-                <SortableHeader field="date">Data</SortableHeader>
-                <TableHead className="w-[60px]">Thumb</TableHead>
-                <TableHead>ID</TableHead>
-                <TableHead>Oferta</TableHead>
-                <TableHead>Fonte</TableHead>
-                <TableHead>Copywriter</TableHead>
-                <TableHead>Status</TableHead>
-                <SortableHeader field="roas" className="text-right">ROAS</SortableHeader>
-                <SortableHeader field="ic" className="text-right">IC</SortableHeader>
-                <SortableHeader field="cpc" className="text-right">CPC</SortableHeader>
-                <SortableHeader field="ctr" className="text-right">CTR</SortableHeader>
-                <SortableHeader field="cpm" className="text-right">CPM</SortableHeader>
-                <SortableHeader field="impressoes" className="text-right">Impr.</SortableHeader>
-                <SortableHeader field="cliques" className="text-right">Cliques</SortableHeader>
-                <SortableHeader field="spend" className="text-right">Spend</SortableHeader>
-                <SortableHeader field="conversoes" className="text-right">Conv.</SortableHeader>
-                <TableHead className="text-right">Ações</TableHead>
+                <SortableHeader field="date" className="text-center">Data</SortableHeader>
+                <TableHead className="w-[60px] text-center">Thumb</TableHead>
+                <TableHead className="text-center">ID</TableHead>
+                <TableHead className="text-center">Oferta</TableHead>
+                <TableHead className="text-center">Fonte</TableHead>
+                <TableHead className="text-center">Copywriter</TableHead>
+                <TableHead className="text-center">Status</TableHead>
+                <TableHead className="text-center">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {sortedMetricas.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={17} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                     Nenhuma metrica encontrada para o periodo selecionado.
                   </TableCell>
                 </TableRow>
               ) : (
                 sortedMetricas.map((metrica) => {
                   if (!metrica.criativo) return null;
-                  const thresholds = getOfferThresholds(metrica.criativo.oferta);
+                  const thresholds = getOfferThresholds(metrica.criativo.oferta_id);
 
                   return (
                     <TableRow key={metrica.id}>
-                      <TableCell>
+                      <TableCell className="text-center">
                         {formatDate(metrica.data)}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="text-center">
                         <VideoThumbnail url={metrica.criativo.url} creativeId={metrica.criativo.id_unico} />
                       </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm">{metrica.criativo.id_unico}</span>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6"
-                            onClick={() => copyToClipboard(metrica.criativo!.id_unico)}
-                            title="Copiar ID"
-                          >
-                            <Copy className="h-3 w-3" />
-                          </Button>
-                        </div>
+                      <TableCell className="text-center">
+                        <span
+                          className="font-mono text-sm cursor-pointer hover:text-primary hover:underline transition-colors"
+                          onClick={() => copyToClipboard(metrica.criativo!.id_unico)}
+                          title="Clique para copiar"
+                        >
+                          {metrica.criativo.id_unico}
+                        </span>
                       </TableCell>
-                      <TableCell>{metrica.criativo.oferta?.nome || 'N/A'}</TableCell>
-                      <TableCell>
+                      <TableCell className="text-center">{metrica.criativo.oferta?.nome || 'N/A'}</TableCell>
+                      <TableCell className="text-center">
                         <FonteBadge fonte={metrica.criativo.fonte} />
                       </TableCell>
-                      <TableCell>{metrica.criativo.copy_responsavel || '-'}</TableCell>
-                      <TableCell>
+                      <TableCell className="text-center">{metrica.criativo.copy_responsavel || '-'}</TableCell>
+                      <TableCell className="text-center">
                         <CreativeStatusBadge status={metrica.criativo.status || 'nao_validado'} />
                       </TableCell>
-                      <TableCell className="text-right">
-                        <MetricBadge
-                          value={metrica.roas || 0}
-                          metricType="roas"
-                          thresholds={thresholds}
-                          format={formatRoas}
-                        />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <MetricBadge
-                          value={metrica.ic || 0}
-                          metricType="ic"
-                          thresholds={thresholds}
-                          format={(v) => formatCurrency(v)}
-                        />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <MetricBadge
-                          value={metrica.cpc || 0}
-                          metricType="cpc"
-                          thresholds={thresholds}
-                          format={(v) => formatCurrency(v)}
-                        />
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        {((metrica.ctr || 0) * 100).toFixed(2)}%
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        {formatCurrency(metrica.cpm || 0)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        {(metrica.impressoes || 0).toLocaleString('de-DE')}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        {(metrica.cliques || 0).toLocaleString('de-DE')}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        {formatCurrency(metrica.spend || 0)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        {(metrica.conversoes || 0).toLocaleString('de-DE')}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => openEditDialog(metrica.criativo!.id)}
-                            title="Editar criativo"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
+                      <TableCell className="text-center">
+                        <TooltipProvider delayDuration={100}>
+                        <div className="flex items-center justify-center gap-1">
+                          <Popover>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <PopoverTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                  >
+                                    <BarChart2 className="h-4 w-4" />
+                                  </Button>
+                                </PopoverTrigger>
+                              </TooltipTrigger>
+                              <TooltipContent>Ver métricas</TooltipContent>
+                            </Tooltip>
+                            <PopoverContent className="w-[520px] p-0" align="end" side="left">
+                              <div className="px-4 py-2 border-b bg-muted/30 flex items-center justify-between">
+                                <span className="font-semibold text-sm">Métricas do Criativo</span>
+                                <span className="text-xs text-muted-foreground">{formatDate(metrica.data)}</span>
+                              </div>
+                              <div className="p-3">
+                                <div className="grid grid-cols-3 gap-x-6 gap-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs text-muted-foreground">ROAS</span>
+                                    <MetricBadge
+                                      value={metrica.roas || 0}
+                                      metricType="roas"
+                                      thresholds={thresholds}
+                                      format={formatRoas}
+                                    />
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs text-muted-foreground">IC</span>
+                                    <MetricBadge
+                                      value={metrica.ic || 0}
+                                      metricType="ic"
+                                      thresholds={thresholds}
+                                      format={(v) => formatCurrency(v)}
+                                    />
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs text-muted-foreground">CPC</span>
+                                    <MetricBadge
+                                      value={metrica.cpc || 0}
+                                      metricType="cpc"
+                                      thresholds={thresholds}
+                                      format={(v) => formatCurrency(v)}
+                                    />
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs text-muted-foreground">Conversões</span>
+                                    <span className="text-xs font-medium">{(metrica.conversoes || 0).toLocaleString('de-DE')}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs text-muted-foreground">Cliques</span>
+                                    <span className="text-xs font-medium">{(metrica.cliques || 0).toLocaleString('de-DE')}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs text-muted-foreground">Impressões</span>
+                                    <span className="text-xs font-medium">{(metrica.impressoes || 0).toLocaleString('de-DE')}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs text-muted-foreground">CTR</span>
+                                    <span className="text-xs font-medium">{((metrica.ctr || 0) * 100).toFixed(2)}%</span>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs text-muted-foreground">CPM</span>
+                                    <span className="text-xs font-medium">{formatCurrency(metrica.cpm || 0)}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs text-muted-foreground">Spend</span>
+                                    <span className="text-xs font-medium">{formatCurrency(metrica.spend || 0)}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => openEditDialog(metrica.criativo!.id)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Editar criativo</TooltipContent>
+                          </Tooltip>
                         </div>
+                        </TooltipProvider>
                       </TableCell>
                     </TableRow>
                   );
@@ -776,7 +902,6 @@ export default function CreativesManagement() {
               )}
             </TableBody>
           </Table>
-          </StickyScrollContainer>
         </Card>
       )}
 
@@ -786,27 +911,16 @@ export default function CreativesManagement() {
           <DialogHeader>
             <DialogTitle>Editar Criativo</DialogTitle>
             <DialogDescription>
-              Selecione os campos que deseja editar
+              Edite os campos necessários
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="max-h-[60vh] pr-4">
-            <div className="grid gap-4 py-4">
+          <ScrollArea className="max-h-[60vh]">
+            <div className="grid gap-4 py-4 px-2">
               {/* Offer field */}
               <div className="grid gap-2">
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="edit-offer-check"
-                    checked={editFieldsEnabled.offer}
-                    onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, offer: !!checked }))}
-                  />
-                  <Label htmlFor="edit-offer-check">Oferta</Label>
-                </div>
-                <Select 
-                  value={editOffer} 
-                  onValueChange={setEditOffer}
-                  disabled={!editFieldsEnabled.offer}
-                >
-                  <SelectTrigger className={!editFieldsEnabled.offer ? 'bg-muted' : ''}>
+                <Label>Oferta</Label>
+                <Select value={editOffer} onValueChange={setEditOffer}>
+                  <SelectTrigger>
                     <SelectValue placeholder="Selecione uma oferta" />
                   </SelectTrigger>
                   <SelectContent>
@@ -819,39 +933,20 @@ export default function CreativesManagement() {
 
               {/* ID field */}
               <div className="grid gap-2">
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="edit-id-check"
-                    checked={editFieldsEnabled.id}
-                    onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, id: !!checked }))}
-                  />
-                  <Label htmlFor="edit-id-check">ID Único</Label>
-                </div>
-                <Input 
+                <Label>ID Único</Label>
+                <Input
                   value={editId}
                   onChange={(e) => setEditId(e.target.value)}
-                  className={cn("font-mono", !editFieldsEnabled.id && 'bg-muted')}
-                  disabled={!editFieldsEnabled.id}
+                  className="font-mono"
                 />
               </div>
 
               {/* Source and Copywriter */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="edit-source-check"
-                      checked={editFieldsEnabled.source}
-                      onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, source: !!checked }))}
-                    />
-                    <Label htmlFor="edit-source-check">Fonte</Label>
-                  </div>
-                  <Select 
-                    value={editSource} 
-                    onValueChange={setEditSource}
-                    disabled={!editFieldsEnabled.source}
-                  >
-                    <SelectTrigger className={!editFieldsEnabled.source ? 'bg-muted' : ''}>
+                  <Label>Fonte</Label>
+                  <Select value={editSource} onValueChange={setEditSource}>
+                    <SelectTrigger>
                       <SelectValue placeholder="Selecione" />
                     </SelectTrigger>
                     <SelectContent>
@@ -863,14 +958,7 @@ export default function CreativesManagement() {
                   </Select>
                 </div>
                 <div className="grid gap-2">
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="edit-copywriter-check"
-                      checked={editFieldsEnabled.copywriter}
-                      onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, copywriter: !!checked }))}
-                    />
-                    <Label htmlFor="edit-copywriter-check">Copywriter</Label>
-                  </div>
+                  <Label>Copywriter</Label>
                   <CreatableCombobox
                     options={copywritersOptions}
                     value={editCopywriter}
@@ -881,28 +969,15 @@ export default function CreativesManagement() {
                     emptyText="Nenhum copywriter encontrado"
                     createText="Criar"
                     isLoading={isLoadingCopywriters}
-                    disabled={!editFieldsEnabled.copywriter}
-                    className={!editFieldsEnabled.copywriter ? 'bg-muted' : ''}
                   />
                 </div>
               </div>
 
               {/* Status */}
               <div className="grid gap-2">
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="edit-status-check"
-                    checked={editFieldsEnabled.status}
-                    onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, status: !!checked }))}
-                  />
-                  <Label htmlFor="edit-status-check">Status</Label>
-                </div>
-                <Select 
-                  value={editStatus} 
-                  onValueChange={setEditStatus}
-                  disabled={!editFieldsEnabled.status}
-                >
-                  <SelectTrigger className={!editFieldsEnabled.status ? 'bg-muted' : ''}>
+                <Label>Status</Label>
+                <Select value={editStatus} onValueChange={setEditStatus}>
+                  <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -917,40 +992,22 @@ export default function CreativesManagement() {
 
               {/* URL field */}
               <div className="grid gap-2">
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="edit-url-check"
-                    checked={editFieldsEnabled.url}
-                    onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, url: !!checked }))}
-                  />
-                  <Label htmlFor="edit-url-check">URL do Vídeo/Imagem</Label>
-                </div>
-                <Input 
+                <Label>URL do Vídeo/Imagem</Label>
+                <Input
                   value={editUrl}
                   onChange={(e) => setEditUrl(e.target.value)}
                   placeholder="https://..."
-                  className={!editFieldsEnabled.url ? 'bg-muted' : ''}
-                  disabled={!editFieldsEnabled.url}
                 />
               </div>
 
               {/* Observations field */}
               <div className="grid gap-2">
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="edit-observations-check"
-                    checked={editFieldsEnabled.observations}
-                    onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, observations: !!checked }))}
-                  />
-                  <Label htmlFor="edit-observations-check">Observações</Label>
-                </div>
+                <Label>Observações</Label>
                 <Textarea
                   value={editObservations}
                   onChange={(e) => setEditObservations(e.target.value)}
                   placeholder="Anotações sobre o criativo..."
                   rows={3}
-                  className={!editFieldsEnabled.observations ? 'bg-muted' : ''}
-                  disabled={!editFieldsEnabled.observations}
                 />
               </div>
 

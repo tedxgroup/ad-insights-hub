@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Search, ArrowUpDown, Copy, RefreshCw, Loader2, Plus, Settings } from 'lucide-react';
+import { ArrowLeft, Search, ArrowUpDown, RefreshCw, Loader2, Plus, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -252,16 +252,10 @@ export default function OfferDetails() {
     
     return (
       <div className="space-y-4">
-        {/* Header with title and button */}
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <h3 className="text-sm font-medium text-muted-foreground">
-            Criativos {fonteLabel}
-          </h3>
-          <Button className="gap-2" onClick={() => openLancarMetrica(fonte)}>
-            <Plus className="h-4 w-4" />
-            Lançar Métrica
-          </Button>
-        </div>
+        {/* Header with title */}
+        <h3 className="text-sm font-medium text-muted-foreground">
+          Criativos {fonteLabel}
+        </h3>
 
         {/* Filters */}
         <div className="flex items-center gap-3 flex-wrap">
@@ -305,6 +299,13 @@ export default function OfferDetails() {
             onChange={setPeriodo}
             showAllOption
           />
+          {/* Botão de lançar métricas ao lado do filtro de período */}
+          {oferta?.status !== 'arquivado' && (
+            <Button className="gap-2" onClick={() => openLancarMetrica(fonte)}>
+              <Plus className="h-4 w-4" />
+              Lançar Métrica
+            </Button>
+          )}
         </div>
 
         {/* Table */}
@@ -342,17 +343,13 @@ export default function OfferDetails() {
                     return (
                       <TableRow key={criativo.id}>
                         <TableCell>
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-sm">{criativo.id_unico}</span>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => handleCopyId(criativo.id_unico)}
-                            >
-                              <Copy className="h-3 w-3" />
-                            </Button>
-                          </div>
+                          <span
+                            className="font-mono text-sm cursor-pointer hover:text-primary hover:underline transition-colors"
+                            onClick={() => handleCopyId(criativo.id_unico)}
+                            title="Clique para copiar"
+                          >
+                            {criativo.id_unico}
+                          </span>
                         </TableCell>
                         <TableCell>
                           <Badge

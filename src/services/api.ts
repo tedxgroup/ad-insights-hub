@@ -25,6 +25,15 @@ export interface Thresholds {
   cpc: { verde: number; amarelo: number };
 }
 
+// Histórico de thresholds type
+export interface ThresholdHistorico {
+  id: string;
+  oferta_id: string;
+  thresholds: Thresholds;
+  data_inicio: string;
+  created_at: string;
+}
+
 // ==================== OFERTAS ====================
 
 export async function fetchOfertas(status?: string) {
@@ -56,19 +65,30 @@ export async function createOferta(oferta: OfertaInsert) {
     .insert(oferta)
     .select()
     .single();
-  
+
   if (error) throw error;
+
+  // Inserir threshold inicial no histórico
+  if (data && oferta.thresholds) {
+    await insertThresholdHistorico(data.id, oferta.thresholds as Thresholds);
+  }
+
   return data;
 }
 
 export async function updateOferta(id: string, updates: OfertaUpdate) {
+  // Se estiver atualizando thresholds, inserir no histórico
+  if (updates.thresholds) {
+    await insertThresholdHistorico(id, updates.thresholds as Thresholds);
+  }
+
   const { data, error } = await supabase
     .from('ofertas')
     .update({ ...updates, updated_at: new Date().toISOString() })
     .eq('id', id)
     .select()
     .single();
-  
+
   if (error) throw error;
   return data;
 }
@@ -107,28 +127,45 @@ export async function archiveOferta(id: string) {
   });
 }
 
-export async function restoreOferta(id: string, restoreCreatives: boolean = false) {
-  // Se solicitado, restaurar criativos que foram arquivados junto com a oferta
-  if (restoreCreatives) {
-    // Primeiro, buscar a oferta para pegar o archived_at
-    const oferta = await fetchOfertaById(id);
+export async function restoreOferta(
+  id: string,
+  criativoIdsToRestore: string[] = []
+) {
+  // Primeiro, buscar a oferta para pegar o archived_at
+  const oferta = await fetchOfertaById(id);
 
-    if (oferta?.archived_at) {
-      // Restaurar apenas criativos que têm o mesmo archived_at da oferta
-      // (ou seja, foram arquivados automaticamente junto com ela)
-      const { error: criativosError } = await supabase
+  if (oferta?.archived_at) {
+    // Se há criativos específicos para restaurar
+    if (criativoIdsToRestore.length > 0) {
+      // Restaurar apenas os criativos selecionados
+      const { error: restoreError } = await supabase
         .from('criativos')
         .update({
           status: 'em_teste',
           archived_at: null
         })
-        .eq('oferta_id', id)
-        .eq('archived_at', oferta.archived_at);
+        .in('id', criativoIdsToRestore);
 
-      if (criativosError) {
-        console.error('Erro ao restaurar criativos:', criativosError);
-        throw criativosError;
+      if (restoreError) {
+        console.error('Erro ao restaurar criativos selecionados:', restoreError);
+        throw restoreError;
       }
+    }
+
+    // Atualizar os criativos NÃO selecionados para terem archived_at próprio
+    // (desvinculando-os do arquivamento da oferta, permitindo restauração individual)
+    const { error: unlinkError } = await supabase
+      .from('criativos')
+      .update({
+        archived_at: new Date().toISOString() // Novo timestamp independente
+      })
+      .eq('oferta_id', id)
+      .eq('archived_at', oferta.archived_at)
+      .eq('status', 'arquivado');
+
+    if (unlinkError) {
+      console.error('Erro ao desvincular criativos:', unlinkError);
+      throw unlinkError;
     }
   }
 
@@ -157,6 +194,27 @@ export async function countCriativosArquivadosComOferta(ofertaId: string): Promi
   }
 
   return count || 0;
+}
+
+// Busca criativos que foram arquivados junto com a oferta
+export async function fetchCriativosArquivadosComOferta(ofertaId: string): Promise<Criativo[]> {
+  const oferta = await fetchOfertaById(ofertaId);
+
+  if (!oferta?.archived_at) return [];
+
+  const { data, error } = await supabase
+    .from('criativos')
+    .select('*')
+    .eq('oferta_id', ofertaId)
+    .eq('archived_at', oferta.archived_at)
+    .order('id_unico', { ascending: true });
+
+  if (error) {
+    console.error('Erro ao buscar criativos arquivados:', error);
+    return [];
+  }
+
+  return data || [];
 }
 
 // ==================== CRIATIVOS ====================
@@ -315,9 +373,22 @@ export async function upsertMetricaDiaria(metrica: MetricaDiariaInsert) {
     .upsert(metrica, { onConflict: 'criativo_id,data' })
     .select()
     .single();
-  
+
   if (error) throw error;
   return data;
+}
+
+// Busca métrica existente por criativo_id + data
+export async function fetchMetricaExistente(criativoId: string, data: string): Promise<MetricaDiaria | null> {
+  const { data: metrica, error } = await supabase
+    .from('metricas_diarias')
+    .select('*')
+    .eq('criativo_id', criativoId)
+    .eq('data', data)
+    .maybeSingle();
+
+  if (error) throw error;
+  return metrica;
 }
 
 // ==================== MÉTRICAS DIÁRIAS OFERTA ====================
@@ -479,6 +550,140 @@ export async function deletePais(id: string) {
     .eq('id', id);
   
   if (error) throw error;
+}
+
+// ==================== THRESHOLDS HISTÓRICO ====================
+
+/**
+ * Busca o threshold vigente para uma oferta em uma data específica
+ * Usado para colorir métricas com os thresholds corretos do período
+ */
+export async function fetchThresholdVigente(ofertaId: string, data: string): Promise<Thresholds> {
+  const defaultThresholds: Thresholds = {
+    roas: { verde: 1.3, amarelo: 1.1 },
+    ic: { verde: 50, amarelo: 60 },
+    cpc: { verde: 1.5, amarelo: 2.0 },
+  };
+
+  const { data: historico, error } = await supabase
+    .from('ofertas_thresholds_historico')
+    .select('thresholds')
+    .eq('oferta_id', ofertaId)
+    .lte('data_inicio', data)
+    .order('data_inicio', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Erro ao buscar threshold vigente:', error);
+    return defaultThresholds;
+  }
+
+  if (!historico?.thresholds) {
+    return defaultThresholds;
+  }
+
+  return parseThresholds(historico.thresholds);
+}
+
+/**
+ * Busca thresholds vigentes para múltiplas ofertas em uma data específica
+ * Retorna um Map de ofertaId -> Thresholds
+ */
+export async function fetchThresholdsVigentesBatch(
+  ofertaIds: string[],
+  data: string
+): Promise<Map<string, Thresholds>> {
+  const result = new Map<string, Thresholds>();
+  const defaultThresholds: Thresholds = {
+    roas: { verde: 1.3, amarelo: 1.1 },
+    ic: { verde: 50, amarelo: 60 },
+    cpc: { verde: 1.5, amarelo: 2.0 },
+  };
+
+  if (ofertaIds.length === 0) return result;
+
+  // Busca todos os thresholds históricos para as ofertas até a data especificada
+  const { data: historicos, error } = await supabase
+    .from('ofertas_thresholds_historico')
+    .select('oferta_id, thresholds, data_inicio')
+    .in('oferta_id', ofertaIds)
+    .lte('data_inicio', data)
+    .order('data_inicio', { ascending: false });
+
+  if (error) {
+    console.error('Erro ao buscar thresholds batch:', error);
+    // Retorna defaults para todas as ofertas
+    ofertaIds.forEach(id => result.set(id, defaultThresholds));
+    return result;
+  }
+
+  // Para cada oferta, pega o threshold mais recente (primeiro do array ordenado DESC)
+  const processedOfertas = new Set<string>();
+  for (const h of historicos || []) {
+    if (!processedOfertas.has(h.oferta_id)) {
+      result.set(h.oferta_id, parseThresholds(h.thresholds));
+      processedOfertas.add(h.oferta_id);
+    }
+  }
+
+  // Ofertas sem histórico recebem defaults
+  ofertaIds.forEach(id => {
+    if (!result.has(id)) {
+      result.set(id, defaultThresholds);
+    }
+  });
+
+  return result;
+}
+
+/**
+ * Insere ou atualiza threshold no histórico
+ * Chamada quando usuário altera thresholds de uma oferta
+ */
+export async function insertThresholdHistorico(
+  ofertaId: string,
+  thresholds: Thresholds,
+  dataInicio?: string
+): Promise<void> {
+  const data = dataInicio || new Date().toISOString().split('T')[0];
+
+  const { error } = await supabase
+    .from('ofertas_thresholds_historico')
+    .upsert(
+      {
+        oferta_id: ofertaId,
+        thresholds: thresholds,
+        data_inicio: data,
+      },
+      { onConflict: 'oferta_id,data_inicio' }
+    );
+
+  if (error) {
+    console.error('Erro ao inserir threshold no histórico:', error);
+    throw error;
+  }
+}
+
+/**
+ * Busca histórico completo de thresholds de uma oferta (para auditoria)
+ */
+export async function fetchThresholdsHistorico(ofertaId: string): Promise<ThresholdHistorico[]> {
+  const { data, error } = await supabase
+    .from('ofertas_thresholds_historico')
+    .select('*')
+    .eq('oferta_id', ofertaId)
+    .order('data_inicio', { ascending: false });
+
+  if (error) {
+    console.error('Erro ao buscar histórico de thresholds:', error);
+    return [];
+  }
+
+  return (data || []).map(h => ({
+    ...h,
+    thresholds: parseThresholds(h.thresholds),
+  })) as ThresholdHistorico[];
 }
 
 // ==================== HELPERS ====================

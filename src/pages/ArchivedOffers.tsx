@@ -19,6 +19,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { OfferCard } from '@/components/OfferCard';
 import { PeriodoFilter, usePeriodo } from '@/components/PeriodoFilter';
 import { toast } from 'sonner';
@@ -32,8 +38,10 @@ import {
   useAllOffersAggregatedMetrics,
   useCreativesCountByOffer,
 } from '@/hooks/useSupabase';
-import { countCriativosArquivadosComOferta } from '@/services/api';
-import type { Oferta } from '@/services/api';
+import { fetchCriativosArquivadosComOferta } from '@/services/api';
+import type { Oferta, Criativo } from '@/services/api';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 export default function ArchivedOffers() {
   const navigate = useNavigate();
@@ -50,8 +58,9 @@ export default function ArchivedOffers() {
   // Restore dialog state
   const [isRestoreDialogOpen, setIsRestoreDialogOpen] = useState(false);
   const [offerToRestore, setOfferToRestore] = useState<Oferta | null>(null);
-  const [criativosCount, setCriativosCount] = useState<number>(0);
-  const [restoreCreatives, setRestoreCreatives] = useState<boolean>(true);
+  const [criativosToRestore, setCriativosToRestore] = useState<Criativo[]>([]);
+  const [selectedCriativoIds, setSelectedCriativoIds] = useState<Set<string>>(new Set());
+  const [isLoadingCriativos, setIsLoadingCriativos] = useState(false);
 
   // Hooks
   const { data: ofertas, isLoading, refetch } = useOfertasArquivadas();
@@ -91,11 +100,35 @@ export default function ArchivedOffers() {
 
   const handleRestoreClick = async (offer: Oferta) => {
     setOfferToRestore(offer);
-    setRestoreCreatives(true);  // Default to restoring creatives
-    // Count how many creatives were archived with this offer
-    const count = await countCriativosArquivadosComOferta(offer.id);
-    setCriativosCount(count);
+    setIsLoadingCriativos(true);
     setIsRestoreDialogOpen(true);
+
+    // Buscar criativos arquivados junto com a oferta
+    const criativos = await fetchCriativosArquivadosComOferta(offer.id);
+    setCriativosToRestore(criativos);
+    // Por padrão, todos selecionados
+    setSelectedCriativoIds(new Set(criativos.map(c => c.id)));
+    setIsLoadingCriativos(false);
+  };
+
+  const handleToggleCriativo = (criativoId: string) => {
+    setSelectedCriativoIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(criativoId)) {
+        newSet.delete(criativoId);
+      } else {
+        newSet.add(criativoId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = () => {
+    setSelectedCriativoIds(new Set(criativosToRestore.map(c => c.id)));
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedCriativoIds(new Set());
   };
 
   const handleConfirmRestore = async () => {
@@ -104,17 +137,26 @@ export default function ArchivedOffers() {
     try {
       await restoreOfertaMutation.mutateAsync({
         id: offerToRestore.id,
-        restoreCreatives: restoreCreatives && criativosCount > 0
+        criativoIdsToRestore: Array.from(selectedCriativoIds)
       });
 
-      if (restoreCreatives && criativosCount > 0) {
-        toast.success(`"${offerToRestore.nome}" foi restaurada com ${criativosCount} criativo(s).`);
+      const selectedCount = selectedCriativoIds.size;
+      const totalCount = criativosToRestore.length;
+
+      if (selectedCount === totalCount && totalCount > 0) {
+        toast.success(`"${offerToRestore.nome}" foi restaurada com ${selectedCount} criativo(s).`);
+      } else if (selectedCount > 0) {
+        toast.success(`"${offerToRestore.nome}" foi restaurada com ${selectedCount} de ${totalCount} criativo(s).`);
+      } else if (totalCount > 0) {
+        toast.success(`"${offerToRestore.nome}" foi restaurada. ${totalCount} criativo(s) podem ser restaurados individualmente.`);
       } else {
         toast.success(`"${offerToRestore.nome}" foi restaurada com status pausado.`);
       }
+
       setIsRestoreDialogOpen(false);
       setOfferToRestore(null);
-      setCriativosCount(0);
+      setCriativosToRestore([]);
+      setSelectedCriativoIds(new Set());
     } catch (error) {
       toast.error('Nao foi possivel restaurar a oferta.');
     }
@@ -177,7 +219,7 @@ export default function ArchivedOffers() {
               placeholder="Buscar oferta arquivada..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
+              className="pl-9 bg-white dark:bg-zinc-950 border-border"
             />
           </div>
           <Select value={nicheFilter} onValueChange={setNicheFilter}>
@@ -225,32 +267,42 @@ export default function ArchivedOffers() {
                 creativesCount={creativesCountByOffer?.get(offer.id)}
               />
               {/* Action icons overlay */}
-              <div className="absolute top-2 right-2 flex gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 bg-background/80 hover:bg-background"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleRestoreClick(offer);
-                  }}
-                  title="Restaurar oferta"
-                >
-                  <RotateCcw className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 bg-background/80 hover:bg-background text-destructive hover:text-destructive"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteClick(offer);
-                  }}
-                  title="Excluir permanentemente"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
+              <TooltipProvider delayDuration={100}>
+                <div className="absolute top-2 right-2 flex gap-1">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 bg-background/80 hover:bg-background"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRestoreClick(offer);
+                        }}
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Restaurar oferta</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 bg-background/80 hover:bg-background text-destructive hover:text-destructive"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteClick(offer);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Excluir permanentemente</TooltipContent>
+                  </Tooltip>
+                </div>
+              </TooltipProvider>
             </div>
           ))}
         </div>
@@ -258,39 +310,73 @@ export default function ArchivedOffers() {
 
       {/* Restore Confirmation Dialog */}
       <Dialog open={isRestoreDialogOpen} onOpenChange={setIsRestoreDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Restaurar Oferta</DialogTitle>
             <DialogDescription>
-              Tem certeza que deseja restaurar "{offerToRestore?.nome}"?
-              A oferta sera restaurada com status "Pausado".
+              A oferta "{offerToRestore?.nome}" será restaurada com status "Pausado".
             </DialogDescription>
           </DialogHeader>
 
-          {/* Option to restore creatives - only show if there are creatives to restore */}
-          {criativosCount > 0 && (
-            <div className="py-4">
-              <div className="p-4 rounded-lg bg-muted/50 border">
-                <div className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    id="restore-creatives"
-                    checked={restoreCreatives}
-                    onChange={(e) => setRestoreCreatives(e.target.checked)}
-                    className="mt-1 h-4 w-4 rounded border-gray-300"
-                  />
-                  <div>
-                    <label htmlFor="restore-creatives" className="text-sm font-medium cursor-pointer">
-                      Restaurar {criativosCount} criativo(s) arquivado(s) junto
-                    </label>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Apenas criativos que foram arquivados automaticamente com esta oferta serao restaurados.
-                      Criativos arquivados manualmente antes permanecerao arquivados.
-                    </p>
-                  </div>
+          {/* Lista de criativos para restaurar */}
+          {isLoadingCriativos ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : criativosToRestore.length > 0 ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">
+                  Selecione os criativos para restaurar ({selectedCriativoIds.size}/{criativosToRestore.length})
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={handleSelectAll}
+                  >
+                    Todos
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={handleDeselectAll}
+                  >
+                    Nenhum
+                  </Button>
                 </div>
               </div>
+              <ScrollArea className="h-[200px] rounded-md border p-2">
+                <div className="space-y-2">
+                  {criativosToRestore.map((criativo) => (
+                    <div
+                      key={criativo.id}
+                      className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 cursor-pointer"
+                      onClick={() => handleToggleCriativo(criativo.id)}
+                    >
+                      <Checkbox
+                        checked={selectedCriativoIds.has(criativo.id)}
+                        onCheckedChange={() => handleToggleCriativo(criativo.id)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-mono text-sm truncate">{criativo.id_unico}</p>
+                        <p className="text-xs text-muted-foreground capitalize">{criativo.fonte}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+              <p className="text-xs text-muted-foreground">
+                Criativos não selecionados poderão ser restaurados individualmente depois.
+              </p>
             </div>
+          ) : (
+            <p className="text-sm text-muted-foreground py-2">
+              Nenhum criativo foi arquivado junto com esta oferta.
+            </p>
           )}
 
           <DialogFooter>
@@ -299,7 +385,7 @@ export default function ArchivedOffers() {
             </Button>
             <Button
               onClick={handleConfirmRestore}
-              disabled={restoreOfertaMutation.isPending}
+              disabled={restoreOfertaMutation.isPending || isLoadingCriativos}
             >
               {restoreOfertaMutation.isPending ? (
                 <>
@@ -307,7 +393,10 @@ export default function ArchivedOffers() {
                   Restaurando...
                 </>
               ) : (
-                'Restaurar'
+                <>
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  Restaurar Oferta
+                </>
               )}
             </Button>
           </DialogFooter>

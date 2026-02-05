@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { RefreshCw, Search, Filter, Loader2 } from 'lucide-react';
+import { RefreshCw, Search, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -134,22 +134,22 @@ export default function Dashboard() {
           }
         />
         <KPIDualCard
-          leftLabel="Spend Hoje"
+          leftLabel="Spend de Hoje"
           leftValue={isLoadingTotais ? '...' : formatCurrency(totais?.hoje.spend || 0)}
-          rightLabel="ROAS Hoje"
+          rightLabel="ROAS de Hoje"
           rightValue={isLoadingTotais ? '...' : formatRoas(totais?.hoje.roas || 0)}
           rightVariant={
-            (totais?.hoje.roas || 0) >= 1.3 ? 'success' : 
+            (totais?.hoje.roas || 0) >= 1.3 ? 'success' :
             (totais?.hoje.roas || 0) >= 1.1 ? 'warning' : 'danger'
           }
         />
         <KPIDualCard
-          leftLabel="Spend 7d"
+          leftLabel="Spend de 7 dias"
           leftValue={isLoadingTotais ? '...' : formatCurrency(totais?.seteDias.spend || 0)}
-          rightLabel="ROAS 7d"
+          rightLabel="ROAS de 7 dias"
           rightValue={isLoadingTotais ? '...' : formatRoas(totais?.seteDias.roas || 0)}
           rightVariant={
-            (totais?.seteDias.roas || 0) >= 1.3 ? 'success' : 
+            (totais?.seteDias.roas || 0) >= 1.3 ? 'success' :
             (totais?.seteDias.roas || 0) >= 1.1 ? 'warning' : 'danger'
           }
         />
@@ -163,10 +163,6 @@ export default function Dashboard() {
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 p-4 bg-card rounded-lg border border-border shadow-card">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Filter className="h-4 w-4" />
-          <span>Filtros</span>
-        </div>
         <div className="flex-1 min-w-[200px]">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -174,17 +170,17 @@ export default function Dashboard() {
               placeholder="Buscar oferta..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
+              className="pl-9 bg-white dark:bg-zinc-950 border-border"
             />
           </div>
         </div>
         <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as 'ativo' | 'pausado')}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Status da Oferta" />
+          <SelectTrigger className="w-[140px]">
+            <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="ativo">Ofertas Ativas</SelectItem>
-            <SelectItem value="pausado">Ofertas Pausadas</SelectItem>
+            <SelectItem value="ativo">Ativas</SelectItem>
+            <SelectItem value="pausado">Pausadas</SelectItem>
           </SelectContent>
         </Select>
         <Select value={nicheFilter} onValueChange={setNicheFilter}>

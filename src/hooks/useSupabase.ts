@@ -25,7 +25,12 @@ import {
   fetchMetricasDiariasOfertaComJoin,
   createMetricaDiaria,
   upsertMetricaDiaria,
+  fetchMetricaExistente,
   getDateRange,
+  // Thresholds Histórico
+  fetchThresholdVigente,
+  fetchThresholdsVigentesBatch,
+  fetchThresholdsHistorico,
   // Dados dinâmicos
   fetchNichos,
   fetchCopywriters,
@@ -40,6 +45,9 @@ import {
   type CriativoUpdate,
   type MetricaDiariaInsert,
   type MetricaDiariaOfertaComJoin,
+  type MetricaDiaria,
+  type Thresholds,
+  type ThresholdHistorico,
 } from '@/services/api';
 
 // ==================== QUERY KEYS ====================
@@ -69,6 +77,12 @@ export const queryKeys = {
     allAggregated: () => ['metricas', 'allAggregated'] as const,
     totais: () => ['metricas', 'totais'] as const,
     contadorCriativos: () => ['metricas', 'contadorCriativos'] as const,
+  },
+  thresholds: {
+    all: ['thresholds'] as const,
+    vigente: (ofertaId: string, data: string) => ['thresholds', 'vigente', ofertaId, data] as const,
+    vigenteBatch: (ofertaIds: string[], data: string) => ['thresholds', 'vigenteBatch', ofertaIds.join(','), data] as const,
+    historico: (ofertaId: string) => ['thresholds', 'historico', ofertaId] as const,
   },
   nichos: ['nichos'] as const,
   copywriters: ['copywriters'] as const,
@@ -119,13 +133,17 @@ export function useCreateOferta() {
 
 export function useUpdateOferta() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
-    mutationFn: ({ id, updates }: { id: string; updates: OfertaUpdate }) => 
+    mutationFn: ({ id, updates }: { id: string; updates: OfertaUpdate }) =>
       updateOferta(id, updates),
-    onSuccess: (_, { id }) => {
+    onSuccess: (_, { id, updates }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.ofertas.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.ofertas.detail(id) });
+      // Se thresholds foram atualizados, invalidar cache de thresholds
+      if (updates.thresholds) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.thresholds.all });
+      }
     },
   });
 }
@@ -147,8 +165,8 @@ export function useRestoreOferta() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, restoreCreatives }: { id: string; restoreCreatives: boolean }) =>
-      restoreOferta(id, restoreCreatives),
+    mutationFn: ({ id, criativoIdsToRestore }: { id: string; criativoIdsToRestore: string[] }) =>
+      restoreOferta(id, criativoIdsToRestore),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.ofertas.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.criativos.all });
@@ -471,14 +489,18 @@ export function useMetricasDiariasComCriativo(filters?: {
 
 export function useCreateMetricaDiaria() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: (metrica: MetricaDiariaInsert) => createMetricaDiaria(metrica),
     onSuccess: (data) => {
+      // Invalida todas as queries de métricas (criativos e ofertas)
       queryClient.invalidateQueries({ queryKey: ['metricas'] });
+      // Invalida especificamente métricas de ofertas (trigger popula metricas_diarias_oferta)
+      queryClient.invalidateQueries({ queryKey: ['metricas', 'diariasComOferta'] });
+      queryClient.invalidateQueries({ queryKey: ['metricas', 'totais'] });
       if (data.criativo_id) {
-        queryClient.invalidateQueries({ 
-          queryKey: queryKeys.metricas.byCriativo(data.criativo_id) 
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.metricas.byCriativo(data.criativo_id)
         });
       }
     },
@@ -487,17 +509,30 @@ export function useCreateMetricaDiaria() {
 
 export function useUpsertMetricaDiaria() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: (metrica: MetricaDiariaInsert) => upsertMetricaDiaria(metrica),
     onSuccess: (data) => {
+      // Invalida todas as queries de métricas (criativos e ofertas)
       queryClient.invalidateQueries({ queryKey: ['metricas'] });
+      // Invalida especificamente métricas de ofertas (trigger popula metricas_diarias_oferta)
+      queryClient.invalidateQueries({ queryKey: ['metricas', 'diariasComOferta'] });
+      queryClient.invalidateQueries({ queryKey: ['metricas', 'totais'] });
       if (data.criativo_id) {
-        queryClient.invalidateQueries({ 
-          queryKey: queryKeys.metricas.byCriativo(data.criativo_id) 
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.metricas.byCriativo(data.criativo_id)
         });
       }
     },
+  });
+}
+
+// Hook para verificar se já existe métrica para criativo + data
+export function useMetricaExistente(criativoId: string | null, data: string | null) {
+  return useQuery({
+    queryKey: ['metricas', 'existente', criativoId, data],
+    queryFn: () => fetchMetricaExistente(criativoId!, data!),
+    enabled: !!criativoId && !!data,
   });
 }
 
@@ -671,6 +706,45 @@ export function useCreativesCountByOffer() {
     },
   });
 }
+
+// ==================== THRESHOLDS HISTÓRICO ====================
+
+/**
+ * Hook para buscar threshold vigente para uma oferta em uma data específica
+ */
+export function useThresholdVigente(ofertaId: string | null, data: string | null) {
+  return useQuery({
+    queryKey: queryKeys.thresholds.vigente(ofertaId || '', data || ''),
+    queryFn: () => fetchThresholdVigente(ofertaId!, data!),
+    enabled: !!ofertaId && !!data,
+  });
+}
+
+/**
+ * Hook para buscar thresholds vigentes para múltiplas ofertas em uma data
+ * Útil para listas de métricas onde cada uma pode ser de uma oferta diferente
+ */
+export function useThresholdsVigentesBatch(ofertaIds: string[], data: string | null) {
+  return useQuery({
+    queryKey: queryKeys.thresholds.vigenteBatch(ofertaIds, data || ''),
+    queryFn: () => fetchThresholdsVigentesBatch(ofertaIds, data!),
+    enabled: ofertaIds.length > 0 && !!data,
+  });
+}
+
+/**
+ * Hook para buscar histórico completo de thresholds de uma oferta
+ */
+export function useThresholdsHistorico(ofertaId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.thresholds.historico(ofertaId || ''),
+    queryFn: () => fetchThresholdsHistorico(ofertaId!),
+    enabled: !!ofertaId,
+  });
+}
+
+// Re-export types para uso nos componentes
+export type { Thresholds, ThresholdHistorico };
 
 // ==================== NICHOS ====================
 

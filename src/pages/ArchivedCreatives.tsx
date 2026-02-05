@@ -27,8 +27,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { CreativeCard } from '@/components/CreativeCard';
 import { MetricBadge } from '@/components/MetricBadge';
+import { PeriodoFilter, usePeriodo } from '@/components/PeriodoFilter';
 import { formatDate } from '@/lib/format';
 import { formatCurrency, formatRoas, getMetricStatus, getMetricClass } from '@/lib/metrics';
 import { parseThresholds } from '@/services/api';
@@ -60,11 +67,16 @@ export default function ArchivedCreatives() {
   const [offerFilter, setOfferFilter] = useState<string>('all');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [copywriterFilter, setCopywriterFilter] = useState<string>('all');
+  const { periodo, setPeriodo } = usePeriodo('all');
 
   // Delete dialog state
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedCreative, setSelectedCreative] = useState<Criativo | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState('');
+
+  // Restore dialog state
+  const [isRestoreDialogOpen, setIsRestoreDialogOpen] = useState(false);
+  const [restoreCreative, setRestoreCreative] = useState<Criativo | null>(null);
 
   // Metrics dialog state
   const [isMetricsDialogOpen, setIsMetricsDialogOpen] = useState(false);
@@ -109,12 +121,34 @@ export default function ArchivedCreatives() {
     const matchesOffer = offerFilter === 'all' || criativo.oferta_id === offerFilter;
     const matchesSource = sourceFilter === 'all' || criativo.fonte === sourceFilter;
     const matchesCopywriter = copywriterFilter === 'all' || criativo.copy_responsavel === copywriterFilter;
+
+    // Period filter using periodo state - filtra pela data de arquivamento
+    if (periodo.tipo !== 'all') {
+      // Usa archived_at se disponível, senão usa updated_at como fallback
+      const archivedAt = new Date(criativo.archived_at || criativo.updated_at || '');
+      const startDate = new Date(periodo.dataInicio);
+      const endDate = new Date(periodo.dataFim);
+      endDate.setHours(23, 59, 59, 999);
+
+      if (archivedAt < startDate || archivedAt > endDate) return false;
+    }
+
     return matchesSearch && matchesOffer && matchesSource && matchesCopywriter;
   });
 
   const getOffer = (offerId: string | null): Oferta | null => {
     if (!offerId) return null;
     return (ofertas || []).find((o) => o.id === offerId) || null;
+  };
+
+  // Verifica se o criativo foi arquivado automaticamente junto com a oferta
+  const wasArchivedWithOffer = (criativo: Criativo): boolean => {
+    const offer = getOffer(criativo.oferta_id);
+    if (!offer) return false;
+    // Se a oferta está arquivada e tem o mesmo archived_at do criativo, foi arquivamento automático
+    return offer.status === 'arquivado' &&
+           offer.archived_at !== null &&
+           criativo.archived_at === offer.archived_at;
   };
 
   const handleDeleteClick = (creative: Criativo, e: React.MouseEvent) => {
@@ -124,14 +158,22 @@ export default function ArchivedCreatives() {
     setIsDeleteDialogOpen(true);
   };
 
-  const handleRestore = async (creative: Criativo, e: React.MouseEvent) => {
+  const handleRestoreClick = (creative: Criativo, e: React.MouseEvent) => {
     e.stopPropagation();
+    setRestoreCreative(creative);
+    setIsRestoreDialogOpen(true);
+  };
+
+  const handleConfirmRestore = async () => {
+    if (!restoreCreative) return;
     try {
       await updateCriativo.mutateAsync({
-        id: creative.id,
+        id: restoreCreative.id,
         updates: { status: 'pausado' }
       });
-      toast.success(`"${creative.id_unico}" foi restaurado com status pausado.`);
+      toast.success(`"${restoreCreative.id_unico}" foi restaurado com status pausado.`);
+      setIsRestoreDialogOpen(false);
+      setRestoreCreative(null);
     } catch (error) {
       toast.error('Não foi possível restaurar o criativo.');
     }
@@ -230,7 +272,7 @@ export default function ArchivedCreatives() {
               placeholder="Buscar por ID do criativo..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
+              className="pl-9 bg-white dark:bg-zinc-950 border-border"
             />
           </div>
           <Select value={offerFilter} onValueChange={setOfferFilter}>
@@ -266,6 +308,11 @@ export default function ArchivedCreatives() {
               ))}
             </SelectContent>
           </Select>
+          <PeriodoFilter
+            value={periodo}
+            onChange={setPeriodo}
+            showAllOption
+          />
         </div>
       </Card>
 
@@ -285,27 +332,56 @@ export default function ArchivedCreatives() {
                 onClick={() => handleCardClick(criativo)}
               />
               {/* Action icons overlay */}
-              <div className="absolute top-2 right-2 flex gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 bg-background/80 hover:bg-background"
-                  onClick={(e) => handleRestore(criativo, e)}
-                  disabled={updateCriativo.isPending}
-                  title="Restaurar criativo"
-                >
-                  <RotateCcw className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 bg-background/80 hover:bg-background text-destructive hover:text-destructive"
-                  onClick={(e) => handleDeleteClick(criativo, e)}
-                  title="Excluir permanentemente"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
+              <TooltipProvider delayDuration={100}>
+                <div className="absolute top-2 right-2 flex gap-1">
+                  {wasArchivedWithOffer(criativo) ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-block">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 bg-background/80 opacity-50 pointer-events-none"
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-[220px] text-center">
+                        Restaure a oferta "{getOffer(criativo.oferta_id)?.nome}" para restaurar este criativo
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 bg-background/80 hover:bg-background"
+                          onClick={(e) => handleRestoreClick(criativo, e)}
+                          disabled={updateCriativo.isPending}
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Restaurar criativo</TooltipContent>
+                    </Tooltip>
+                  )}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 bg-background/80 hover:bg-background text-destructive hover:text-destructive"
+                        onClick={(e) => handleDeleteClick(criativo, e)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Excluir permanentemente</TooltipContent>
+                  </Tooltip>
+                </div>
+              </TooltipProvider>
             </div>
           ))}
         </div>
@@ -315,8 +391,20 @@ export default function ArchivedCreatives() {
       <Dialog open={isMetricsDialogOpen} onOpenChange={setIsMetricsDialogOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
-              Histórico de Métricas - {metricsCreative?.id_unico}
+            <DialogTitle className="flex items-center gap-2">
+              Histórico de Métricas -
+              <span
+                className="font-mono cursor-pointer hover:text-primary hover:underline transition-colors"
+                onClick={() => {
+                  if (metricsCreative?.id_unico) {
+                    navigator.clipboard.writeText(metricsCreative.id_unico);
+                    toast.success('ID copiado!');
+                  }
+                }}
+                title="Clique para copiar"
+              >
+                {metricsCreative?.id_unico}
+              </span>
             </DialogTitle>
             <DialogDescription>
               Oferta: {getOffer(metricsCreative?.oferta_id || null)?.nome || 'Sem oferta'}
@@ -430,6 +518,49 @@ export default function ArchivedCreatives() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsMetricsDialogOpen(false)}>
               Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Restore Confirmation Dialog */}
+      <Dialog open={isRestoreDialogOpen} onOpenChange={setIsRestoreDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Restaurar Criativo</DialogTitle>
+            <DialogDescription>
+              O criativo será restaurado com status "Pausado" e voltará a aparecer na gestão de criativos.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="p-4 rounded-lg bg-muted border">
+              <p className="text-sm font-medium mb-1">
+                Criativo: <span className="font-mono">{restoreCreative?.id_unico}</span>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Oferta: {getOffer(restoreCreative?.oferta_id || null)?.nome || 'Sem oferta'}
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsRestoreDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleConfirmRestore}
+              disabled={updateCriativo.isPending}
+            >
+              {updateCriativo.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Restaurando...
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  Confirmar Restauração
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

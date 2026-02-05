@@ -1,12 +1,11 @@
 import { useState } from 'react';
-import { Plus, Pencil, Search, ArrowUpDown, Eye, RefreshCw, Loader2 } from 'lucide-react';
+import { Plus, Pencil, Search, ArrowUpDown, Eye, RefreshCw, Loader2, BarChart2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Table,
   TableBody,
@@ -44,11 +43,16 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { StatusBadge, MetricBadge } from '@/components/MetricBadge';
 import { CreatableCombobox } from '@/components/ui/creatable-combobox';
-import { StickyScrollContainer } from '@/components/StickyScrollContainer';
 import { PeriodoFilter, usePeriodo, type PeriodoValue } from '@/components/PeriodoFilter';
 import { ThresholdsDialog } from '@/components/ThresholdsDialog';
 import { formatCurrency, formatRoas, getMetricStatus, getMetricClass } from '@/lib/metrics';
@@ -57,6 +61,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
   useOfertas,
+  useOfertasAtivas,
   useCreateOferta,
   useUpdateOferta,
   useArchiveOferta,
@@ -65,10 +70,12 @@ import {
   useCreateNicho,
   useCreatePais,
   useMetricasDiariasComOferta,
+  useThresholdsVigentesBatch,
+  type Thresholds,
 } from '@/hooks/useSupabase';
 import { parseThresholds, type Oferta, type MetricaDiariaOfertaComJoin } from '@/services/api';
 
-type SortField = 'roas' | 'ic' | 'cpc' | 'profit' | 'mc' | 'revenue' | 'spend' | 'date' | null;
+type SortField = 'roas' | 'ic' | 'cpc' | 'date' | null;
 type SortDirection = 'asc' | 'desc';
 
 // Type alias for convenience
@@ -83,9 +90,25 @@ export default function OffersManagement() {
     dataInicio: periodo.dataInicio,
     dataFim: periodo.dataFim,
   });
-  const { data: ofertas, refetch: refetchOfertas } = useOfertas();
+  const { data: ofertas, isLoading: isLoadingOfertas, refetch: refetchOfertas } = useOfertas();
+  const { data: ofertasAtivas } = useOfertasAtivas();
   const { data: nichos, isLoading: isLoadingNichos } = useNichos();
   const { data: paises, isLoading: isLoadingPaises } = usePaises();
+
+  // Extrair oferta_ids únicos das métricas para buscar thresholds históricos
+  const ofertaIdsFromMetricas = Array.from(
+    new Set(
+      (metricasDiarias || [])
+        .map(m => m.oferta_id)
+        .filter((id): id is string => !!id)
+    )
+  );
+
+  // Buscar thresholds vigentes para o último dia do período (Opção A acordada)
+  const { data: thresholdsMap } = useThresholdsVigentesBatch(
+    ofertaIdsFromMetricas,
+    periodo.dataFim
+  );
   
   const createOfertaMutation = useCreateOferta();
   const updateOfertaMutation = useUpdateOferta();
@@ -127,12 +150,6 @@ export default function OffersManagement() {
   const [editNiche, setEditNiche] = useState('');
   const [editCountry, setEditCountry] = useState('');
   const [editStatus, setEditStatus] = useState('');
-  const [editFieldsEnabled, setEditFieldsEnabled] = useState({
-    name: false,
-    niche: false,
-    country: false,
-    status: false,
-  });
 
   // Convert nichos/paises to combobox options
   const nichosOptions = (nichos || []).map(n => ({ value: n.nome, label: n.nome }));
@@ -153,24 +170,39 @@ export default function OffersManagement() {
     }
   };
 
+  // Converte Thresholds (verde/amarelo) para formato do MetricBadge (green/yellow)
+  const convertThresholdsFormat = (t: Thresholds) => ({
+    roas: { green: t.roas.verde, yellow: t.roas.amarelo },
+    ic: { green: t.ic.verde, yellow: t.ic.amarelo },
+    cpc: { green: t.cpc.verde, yellow: t.cpc.amarelo },
+  });
+
+  // Busca thresholds do histórico para uma oferta
+  // Usa thresholds vigentes no último dia do período selecionado
+  const getOfferThresholds = (ofertaId: string | null | undefined) => {
+    const defaultThresholds = { roas: { green: 1.3, yellow: 1.1 }, ic: { green: 50, yellow: 60 }, cpc: { green: 1.5, yellow: 2 } };
+    if (!ofertaId || !thresholdsMap) return defaultThresholds;
+
+    const historicalThresholds = thresholdsMap.get(ofertaId);
+    if (!historicalThresholds) return defaultThresholds;
+
+    return convertThresholdsFormat(historicalThresholds);
+  };
+
   // Filter metrics based on search and filters
   const filteredMetricas = (metricasDiarias || []).filter((metrica) => {
     if (!metrica.oferta) return false;
-    
+
     const matchesSearch = metrica.oferta.nome.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesNiche = nicheFilter === 'all' || metrica.oferta.nicho === nicheFilter;
     const matchesCountry = countryFilter === 'all' || metrica.oferta.pais === countryFilter;
     const matchesStatus = statusFilter === 'all' || metrica.oferta.status === statusFilter;
-    
-    // For health filter, we need thresholds
-    const thresholds = parseThresholds(metrica.oferta.thresholds);
-    const health = getMetricStatus(metrica.roas || 0, 'roas', {
-      roas: { green: thresholds.roas.verde, yellow: thresholds.roas.amarelo },
-      ic: { green: thresholds.ic.verde, yellow: thresholds.ic.amarelo },
-      cpc: { green: thresholds.cpc.verde, yellow: thresholds.cpc.amarelo },
-    });
+
+    // For health filter, use historical thresholds
+    const thresholds = getOfferThresholds(metrica.oferta_id);
+    const health = getMetricStatus(metrica.roas || 0, 'roas', thresholds);
     const matchesHealth = healthFilter === 'all' || health === healthFilter;
-    
+
     return matchesSearch && matchesNiche && matchesCountry && matchesStatus && matchesHealth;
   });
 
@@ -192,22 +224,6 @@ export default function OffersManagement() {
       case 'cpc':
         aValue = a.cpc || 0;
         bValue = b.cpc || 0;
-        break;
-      case 'profit':
-        aValue = a.lucro || 0;
-        bValue = b.lucro || 0;
-        break;
-      case 'mc':
-        aValue = a.mc || 0;
-        bValue = b.mc || 0;
-        break;
-      case 'revenue':
-        aValue = a.faturado || 0;
-        bValue = b.faturado || 0;
-        break;
-      case 'spend':
-        aValue = a.spend || 0;
-        bValue = b.spend || 0;
         break;
       case 'date':
         aValue = new Date(a.data).getTime();
@@ -289,12 +305,6 @@ export default function OffersManagement() {
     setEditNiche(offer.nicho);
     setEditCountry(offer.pais);
     setEditStatus(offer.status || 'ativo');
-    setEditFieldsEnabled({
-      name: false,
-      niche: false,
-      country: false,
-      status: false,
-    });
     setIsEditSheetOpen(true);
   };
 
@@ -307,6 +317,20 @@ export default function OffersManagement() {
   };
 
   const handleSaveEdit = () => {
+    if (!editingOffer) return;
+
+    // Verificar se houve alteração real em algum campo
+    const hasChanges =
+      editName !== editingOffer.nome ||
+      editNiche !== editingOffer.nicho ||
+      editCountry !== editingOffer.pais ||
+      editStatus !== (editingOffer.status || 'ativo');
+
+    if (!hasChanges) {
+      toast.error('Nenhuma alteração foi detectada.');
+      return;
+    }
+
     setIsConfirmDialogOpen(true);
   };
 
@@ -315,7 +339,7 @@ export default function OffersManagement() {
 
     try {
       // Verificar se está arquivando a oferta
-      const isArchiving = editFieldsEnabled.status && editStatus === 'arquivado' && editingOffer.status !== 'arquivado';
+      const isArchiving = editStatus === 'arquivado' && editingOffer.status !== 'arquivado';
 
       if (isArchiving) {
         // Usar archiveOfertaMutation para arquivar oferta E criativos
@@ -323,9 +347,9 @@ export default function OffersManagement() {
 
         // Se houver outras alterações além do status, aplicá-las também
         const otherUpdates: Record<string, any> = {};
-        if (editFieldsEnabled.name) otherUpdates.nome = editName;
-        if (editFieldsEnabled.niche) otherUpdates.nicho = editNiche;
-        if (editFieldsEnabled.country) otherUpdates.pais = editCountry;
+        if (editName !== editingOffer.nome) otherUpdates.nome = editName;
+        if (editNiche !== editingOffer.nicho) otherUpdates.nicho = editNiche;
+        if (editCountry !== editingOffer.pais) otherUpdates.pais = editCountry;
 
         if (Object.keys(otherUpdates).length > 0) {
           await updateOfertaMutation.mutateAsync({
@@ -339,10 +363,10 @@ export default function OffersManagement() {
         // Atualização normal (sem arquivamento)
         const updates: Record<string, any> = {};
 
-        if (editFieldsEnabled.name) updates.nome = editName;
-        if (editFieldsEnabled.niche) updates.nicho = editNiche;
-        if (editFieldsEnabled.country) updates.pais = editCountry;
-        if (editFieldsEnabled.status) updates.status = editStatus;
+        if (editName !== editingOffer.nome) updates.nome = editName;
+        if (editNiche !== editingOffer.nicho) updates.nicho = editNiche;
+        if (editCountry !== editingOffer.pais) updates.pais = editCountry;
+        if (editStatus !== (editingOffer.status || 'ativo')) updates.status = editStatus;
 
         await updateOfertaMutation.mutateAsync({
           id: editingOffer.id,
@@ -361,11 +385,15 @@ export default function OffersManagement() {
   };
 
   const SortableHeader = ({ field, children, className }: { field: SortField; children: React.ReactNode; className?: string }) => (
-    <TableHead 
+    <TableHead
       className={cn("cursor-pointer hover:bg-muted/50 transition-colors", className)}
       onClick={() => handleSort(field)}
     >
-      <div className={cn("flex items-center gap-1", className?.includes('text-right') && "justify-end")}>
+      <div className={cn(
+        "flex items-center gap-1",
+        className?.includes('text-right') && "justify-end",
+        className?.includes('text-center') && "justify-center"
+      )}>
         {children}
         <ArrowUpDown className={cn(
           "h-3 w-3",
@@ -375,15 +403,6 @@ export default function OffersManagement() {
     </TableHead>
   );
 
-  const getOfferThresholds = (offer: Oferta | null) => {
-    const t = parseThresholds(offer?.thresholds);
-    return {
-      roas: { green: t.roas.verde, yellow: t.roas.amarelo },
-      ic: { green: t.ic.verde, yellow: t.ic.amarelo },
-      cpc: { green: t.cpc.verde, yellow: t.cpc.amarelo },
-    };
-  };
-
   const mapStatusToDisplay = (status: string): 'active' | 'paused' | 'archived' => {
     switch (status) {
       case 'ativo': return 'active';
@@ -392,6 +411,22 @@ export default function OffersManagement() {
       default: return 'active';
     }
   };
+
+  // Encontrar ofertas ativas que não têm métricas no período selecionado
+  const ofertasComMetricas = new Set(
+    (metricasDiarias || [])
+      .filter(m => m.oferta)
+      .map(m => m.oferta!.id)
+  );
+
+  const ofertasSemMetricas = (ofertasAtivas || []).filter(oferta => {
+    const semMetricas = !ofertasComMetricas.has(oferta.id);
+    const matchesSearch = oferta.nome.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesNiche = nicheFilter === 'all' || oferta.nicho === nicheFilter;
+    const matchesCountry = countryFilter === 'all' || oferta.pais === countryFilter;
+    const matchesStatus = statusFilter === 'all' || oferta.status === statusFilter;
+    return semMetricas && matchesSearch && matchesNiche && matchesCountry && matchesStatus;
+  });
 
   return (
     <div className="space-y-6">
@@ -425,15 +460,15 @@ export default function OffersManagement() {
                 Nova Oferta
               </Button>
             </SheetTrigger>
-            <SheetContent className="w-[500px] sm:max-w-lg">
+            <SheetContent className="w-[550px] sm:max-w-xl">
               <SheetHeader>
                 <SheetTitle>Nova Oferta</SheetTitle>
                 <SheetDescription>
                   Cadastre uma nova oferta no sistema
                 </SheetDescription>
               </SheetHeader>
-              <ScrollArea className="h-[calc(100vh-180px)] pr-4">
-                <div className="grid gap-4 py-6">
+              <ScrollArea className="h-[calc(100vh-180px)]">
+                <div className="grid gap-4 py-6 px-2">
                   <div className="grid gap-2">
                     <Label htmlFor="name">Nome da Oferta <span className="text-destructive">*</span></Label>
                     <Input 
@@ -639,10 +674,10 @@ export default function OffersManagement() {
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Buscar oferta..."
+              placeholder="Buscar por nome..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
+              className="pl-9 bg-white dark:bg-zinc-950 border-border"
             />
           </div>
           <Select value={nicheFilter} onValueChange={setNicheFilter}>
@@ -711,6 +746,71 @@ export default function OffersManagement() {
         </div>
       </Card>
 
+      {/* Ofertas sem métricas no período */}
+      {ofertasSemMetricas.length > 0 && (
+        <Card className="p-4 border-warning/50 bg-warning/5">
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 mt-0.5">
+              <div className="h-2 w-2 rounded-full bg-warning" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-sm font-medium text-foreground mb-2">
+                {ofertasSemMetricas.length} oferta(s) sem métricas no período selecionado
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {ofertasSemMetricas.map((oferta) => (
+                  <div
+                    key={oferta.id}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-background border cursor-pointer hover:border-primary/50 transition-colors"
+                    onClick={() => openEditSheet(oferta)}
+                  >
+                    <span className="text-sm font-medium">{oferta.nome}</span>
+                    <StatusBadge status={mapStatusToDisplay(oferta.status || 'ativo')} />
+                    <TooltipProvider delayDuration={100}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/ofertas/${oferta.id}`);
+                            }}
+                          >
+                            <Eye className="h-3 w-3" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Ver detalhes e lançar métricas</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditSheet(oferta);
+                            }}
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Editar oferta</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                Essas ofertas foram criadas mas ainda não têm métricas lançadas. Clique para editar ou lance métricas para vê-las na tabela.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {/* Loading State */}
       {isLoadingMetricas ? (
         <div className="flex items-center justify-center py-12">
@@ -719,50 +819,45 @@ export default function OffersManagement() {
       ) : (
         /* Table */
         <Card className="p-0">
-          <StickyScrollContainer>
-          <Table noOverflow>
+          <Table>
             <TableHeader>
               <TableRow>
-                <SortableHeader field="date">Data</SortableHeader>
-                <TableHead>Nome</TableHead>
-                <TableHead>Nicho</TableHead>
-                <TableHead>País</TableHead>
-                <TableHead>Status</TableHead>
-                <SortableHeader field="roas" className="text-right">ROAS</SortableHeader>
-                <SortableHeader field="ic" className="text-right">IC</SortableHeader>
-                <SortableHeader field="cpc" className="text-right">CPC</SortableHeader>
-                <SortableHeader field="profit" className="text-right">Lucro</SortableHeader>
-                <SortableHeader field="mc" className="text-right">MC</SortableHeader>
-                <SortableHeader field="revenue" className="text-right">Faturamento</SortableHeader>
-                <SortableHeader field="spend" className="text-right">Spend</SortableHeader>
-                <TableHead className="text-right">Ações</TableHead>
+                <SortableHeader field="date" className="text-center">Data</SortableHeader>
+                <TableHead className="text-center">Nome</TableHead>
+                <TableHead className="text-center">Nicho</TableHead>
+                <TableHead className="text-center">País</TableHead>
+                <TableHead className="text-center">Status</TableHead>
+                <SortableHeader field="roas" className="text-center">ROAS</SortableHeader>
+                <SortableHeader field="ic" className="text-center">IC</SortableHeader>
+                <SortableHeader field="cpc" className="text-center">CPC</SortableHeader>
+                <TableHead className="text-center">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {sortedMetricas.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                     Nenhum resultado encontrado para o período selecionado
                   </TableCell>
                 </TableRow>
               ) : (
                 sortedMetricas.map((metrica) => {
                   if (!metrica.oferta) return null;
-                  
-                  const thresholds = getOfferThresholds(metrica.oferta);
+
+                  const thresholds = getOfferThresholds(metrica.oferta_id);
                   const lucro = (metrica.faturado || 0) - (metrica.spend || 0);
-                  const mc = metrica.faturado && metrica.faturado > 0 
-                    ? (lucro / metrica.faturado) * 100 
+                  const mc = metrica.faturado && metrica.faturado > 0
+                    ? (lucro / metrica.faturado) * 100
                     : 0;
 
                   return (
                     <TableRow key={metrica.id}>
-                      <TableCell>{new Date(metrica.data).toLocaleDateString('pt-BR')}</TableCell>
-                      <TableCell className="font-medium">{metrica.oferta.nome}</TableCell>
-                      <TableCell>{metrica.oferta.nicho}</TableCell>
-                      <TableCell>{metrica.oferta.pais}</TableCell>
-                      <TableCell><StatusBadge status={mapStatusToDisplay(metrica.oferta.status || 'ativo')} /></TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-center">{formatDate(metrica.data)}</TableCell>
+                      <TableCell className="text-center font-medium">{metrica.oferta.nome}</TableCell>
+                      <TableCell className="text-center">{metrica.oferta.nicho}</TableCell>
+                      <TableCell className="text-center">{metrica.oferta.pais}</TableCell>
+                      <TableCell className="text-center"><StatusBadge status={mapStatusToDisplay(metrica.oferta.status || 'ativo')} /></TableCell>
+                      <TableCell className="text-center">
                         <MetricBadge
                           value={metrica.roas || 0}
                           metricType="roas"
@@ -770,7 +865,7 @@ export default function OffersManagement() {
                           format={formatRoas}
                         />
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-center">
                         <MetricBadge
                           value={metrica.ic || 0}
                           metricType="ic"
@@ -778,7 +873,7 @@ export default function OffersManagement() {
                           format={(v) => formatCurrency(v)}
                         />
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-center">
                         <MetricBadge
                           value={metrica.cpc || 0}
                           metricType="cpc"
@@ -786,33 +881,80 @@ export default function OffersManagement() {
                           format={(v) => formatCurrency(v)}
                         />
                       </TableCell>
-                      <TableCell className={`text-right font-medium ${lucro >= 0 ? 'text-success' : 'text-danger'}`}>
-                        {formatCurrency(lucro)}
-                      </TableCell>
-                      <TableCell className="text-right">{mc.toFixed(1)}%</TableCell>
-                      <TableCell className="text-right">{formatCurrency(metrica.faturado || 0)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(metrica.spend || 0)}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-8 w-8"
-                            onClick={() => openThresholdsDialog(metrica)}
-                            title="Ver métricas"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-8 w-8"
-                            onClick={() => metrica.oferta && openEditSheet(metrica.oferta)}
-                            title="Editar oferta"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                        </div>
+                      <TableCell className="text-center">
+                        <TooltipProvider delayDuration={100}>
+                          <div className="flex items-center justify-center gap-1">
+                            <Popover>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <PopoverTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                    >
+                                      <BarChart2 className="h-4 w-4" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent>Ver detalhes financeiros</TooltipContent>
+                              </Tooltip>
+                              <PopoverContent className="w-64" align="end">
+                                <div className="grid gap-3">
+                                  <div className="font-medium text-sm border-b pb-2">
+                                    Detalhes - {formatDate(metrica.data)}
+                                  </div>
+                                  <div className="grid gap-2 text-sm">
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Lucro</span>
+                                      <span className={`font-medium ${lucro >= 0 ? 'text-success' : 'text-danger'}`}>
+                                        {formatCurrency(lucro)}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">MC</span>
+                                      <span className="font-medium">{mc.toFixed(1)}%</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Faturamento</span>
+                                      <span className="font-medium">{formatCurrency(metrica.faturado || 0)}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Spend</span>
+                                      <span className="font-medium">{formatCurrency(metrica.spend || 0)}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => openThresholdsDialog(metrica)}
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Ver métricas</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => metrica.oferta && openEditSheet(metrica.oferta)}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Editar oferta</TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </TooltipProvider>
                       </TableCell>
                     </TableRow>
                   );
@@ -820,7 +962,6 @@ export default function OffersManagement() {
               )}
             </TableBody>
           </Table>
-          </StickyScrollContainer>
         </Card>
       )}
 
@@ -834,49 +975,34 @@ export default function OffersManagement() {
           ic: viewingMetrica?.ic || 0,
           cpc: viewingMetrica?.cpc || 0,
         }}
+        dataMetrica={viewingMetrica?.data}
       />
 
       {/* Edit Sheet */}
       <Sheet open={isEditSheetOpen} onOpenChange={setIsEditSheetOpen}>
-        <SheetContent className="w-[500px] sm:max-w-lg">
+        <SheetContent className="w-[550px] sm:max-w-xl">
           <SheetHeader>
             <SheetTitle>Editar Oferta</SheetTitle>
             <SheetDescription>
-              Selecione os campos que deseja editar
+              Altere as informações da oferta
             </SheetDescription>
           </SheetHeader>
-          <ScrollArea className="h-[calc(100vh-180px)] pr-4">
-            <div className="grid gap-4 py-6">
+          <ScrollArea className="h-[calc(100vh-180px)]">
+            <div className="grid gap-4 py-6 px-2">
               {/* Name field */}
               <div className="grid gap-2">
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="edit-name-check"
-                    checked={editFieldsEnabled.name}
-                    onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, name: !!checked }))}
-                  />
-                  <Label htmlFor="edit-name-check">Nome da Oferta</Label>
-                </div>
-                <Input 
-                  id="edit-name" 
+                <Label htmlFor="edit-name">Nome da Oferta</Label>
+                <Input
+                  id="edit-name"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  disabled={!editFieldsEnabled.name}
-                  className={!editFieldsEnabled.name ? 'bg-muted' : ''}
                 />
               </div>
 
               {/* Niche and Country */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="edit-niche-check"
-                      checked={editFieldsEnabled.niche}
-                      onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, niche: !!checked }))}
-                    />
-                    <Label htmlFor="edit-niche-check">Nicho</Label>
-                  </div>
+                  <Label>Nicho</Label>
                   <CreatableCombobox
                     options={nichosOptions}
                     value={editNiche}
@@ -887,19 +1013,10 @@ export default function OffersManagement() {
                     emptyText="Nenhum nicho encontrado"
                     createText="Criar"
                     isLoading={isLoadingNichos}
-                    disabled={!editFieldsEnabled.niche}
-                    className={!editFieldsEnabled.niche ? 'bg-muted' : ''}
                   />
                 </div>
                 <div className="grid gap-2">
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="edit-country-check"
-                      checked={editFieldsEnabled.country}
-                      onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, country: !!checked }))}
-                    />
-                    <Label htmlFor="edit-country-check">País</Label>
-                  </div>
+                  <Label>País</Label>
                   <CreatableCombobox
                     options={paisesOptions}
                     value={editCountry}
@@ -910,28 +1027,15 @@ export default function OffersManagement() {
                     emptyText="Nenhum país encontrado"
                     createText="Criar"
                     isLoading={isLoadingPaises}
-                    disabled={!editFieldsEnabled.country}
-                    className={!editFieldsEnabled.country ? 'bg-muted' : ''}
                   />
                 </div>
               </div>
 
               {/* Status */}
               <div className="grid gap-2">
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="edit-status-check"
-                    checked={editFieldsEnabled.status}
-                    onCheckedChange={(checked) => setEditFieldsEnabled(prev => ({ ...prev, status: !!checked }))}
-                  />
-                  <Label htmlFor="edit-status-check">Status</Label>
-                </div>
-                <Select 
-                  value={editStatus} 
-                  onValueChange={setEditStatus}
-                  disabled={!editFieldsEnabled.status}
-                >
-                  <SelectTrigger className={!editFieldsEnabled.status ? 'bg-muted' : ''}>
+                <Label>Status</Label>
+                <Select value={editStatus} onValueChange={setEditStatus}>
+                  <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

@@ -33,22 +33,32 @@ interface PeriodoFilterProps {
   className?: string;
 }
 
+// Formata data local como YYYY-MM-DD (sem conversão para UTC)
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const result = `${year}-${month}-${day}`;
+  console.log('[DEBUG] formatLocalDate:', { date: date.toString(), result });
+  return result;
+}
+
 function getDateRange(tipo: PeriodoTipo): { dataInicio: string; dataFim: string } {
   const hoje = new Date();
-  const dataFim = hoje.toISOString().split('T')[0];
-  
+  const dataFim = formatLocalDate(hoje);
+
   switch (tipo) {
     case 'today':
       return { dataInicio: dataFim, dataFim };
     case '7d': {
       const seteDias = new Date(hoje);
       seteDias.setDate(seteDias.getDate() - 6);
-      return { dataInicio: seteDias.toISOString().split('T')[0], dataFim };
+      return { dataInicio: formatLocalDate(seteDias), dataFim };
     }
     case '30d': {
       const trintaDias = new Date(hoje);
       trintaDias.setDate(trintaDias.getDate() - 29);
-      return { dataInicio: trintaDias.toISOString().split('T')[0], dataFim };
+      return { dataInicio: formatLocalDate(trintaDias), dataFim };
     }
     case 'all':
       return { dataInicio: '2020-01-01', dataFim };
@@ -58,11 +68,36 @@ function getDateRange(tipo: PeriodoTipo): { dataInicio: string; dataFim: string 
 }
 
 export function usePeriodo(initialTipo: PeriodoTipo = '7d') {
-  const [periodo, setPeriodo] = useState<PeriodoValue>(() => ({
+  const [periodo, setPeriodoState] = useState<PeriodoValue>(() => ({
     tipo: initialTipo,
     ...getDateRange(initialTipo),
   }));
-  
+
+  // Recalcula as datas quando o tipo muda (exceto custom)
+  const setPeriodo = (newValue: PeriodoValue) => {
+    if (newValue.tipo !== 'custom') {
+      // Recalcula as datas com base na data atual
+      const range = getDateRange(newValue.tipo);
+      setPeriodoState({
+        tipo: newValue.tipo,
+        ...range,
+      });
+    } else {
+      setPeriodoState(newValue);
+    }
+  };
+
+  // Recalcula as datas ao montar o componente (garante data atual)
+  useEffect(() => {
+    if (periodo.tipo !== 'custom') {
+      const range = getDateRange(periodo.tipo);
+      setPeriodoState(prev => ({
+        ...prev,
+        ...range,
+      }));
+    }
+  }, []); // Executa apenas na montagem
+
   return { periodo, setPeriodo };
 }
 
@@ -96,18 +131,18 @@ export function PeriodoFilter({
 
   const handleDateRangeChange = (range: { from: Date | undefined; to: Date | undefined }) => {
     setDateRange(range);
-    
+
     if (range.from && range.to) {
       onChange({
         tipo: 'custom',
-        dataInicio: range.from.toISOString().split('T')[0],
-        dataFim: range.to.toISOString().split('T')[0],
+        dataInicio: formatLocalDate(range.from),
+        dataFim: formatLocalDate(range.to),
       });
     } else if (range.from) {
       onChange({
         tipo: 'custom',
-        dataInicio: range.from.toISOString().split('T')[0],
-        dataFim: range.from.toISOString().split('T')[0],
+        dataInicio: formatLocalDate(range.from),
+        dataFim: formatLocalDate(range.from),
       });
     }
   };

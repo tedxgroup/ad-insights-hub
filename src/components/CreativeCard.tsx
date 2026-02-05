@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { formatCurrency, formatRoas, getMetricStatus, getMetricClass } from "@/lib/metrics";
 import { parseThresholds, type Criativo, type Oferta } from "@/services/api";
 import { VideoThumbnail } from "@/components/VideoPlayerDialog";
+import { toast } from "sonner";
 
 interface CreativeCardProps {
   criativo: Criativo;
@@ -80,7 +81,15 @@ export function CreativeCard({ criativo, oferta, metrics, onClick }: CreativeCar
               health === 'danger' && "bg-danger",
               health === 'default' && "bg-muted-foreground"
             )} />
-            <h3 className="font-mono text-sm font-semibold text-foreground truncate">
+            <h3
+              className="font-mono text-sm font-semibold text-foreground truncate cursor-pointer hover:text-primary hover:underline transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigator.clipboard.writeText(criativo.id_unico);
+                toast.success('ID copiado!');
+              }}
+              title="Clique para copiar"
+            >
               {criativo.id_unico}
             </h3>
           </div>
@@ -141,7 +150,7 @@ export function CreativeCard({ criativo, oferta, metrics, onClick }: CreativeCar
           {sourceLabels[criativo.fonte] || criativo.fonte}
         </Badge>
         {criativo.copy_responsavel && (
-          <Badge variant="secondary" className="text-xs">
+          <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/30">
             {criativo.copy_responsavel}
           </Badge>
         )}

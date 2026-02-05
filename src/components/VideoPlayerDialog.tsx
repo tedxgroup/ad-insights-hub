@@ -6,6 +6,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -86,7 +92,7 @@ export function VideoPlayerDialog({ url, creativeId, trigger }: VideoPlayerDialo
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8"
+              className="h-8 w-8 mr-8"
               onClick={() => window.open(url, '_blank')}
               title="Abrir em nova aba"
             >
@@ -135,42 +141,58 @@ interface VideoThumbnailProps {
 export function VideoThumbnail({ url, creativeId }: VideoThumbnailProps) {
   if (!url) {
     return (
-      <div className="h-10 w-10 rounded bg-muted flex items-center justify-center">
-        <Play className="h-4 w-4 text-muted-foreground opacity-30" />
-      </div>
+      <TooltipProvider delayDuration={100}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="h-10 w-10 rounded bg-muted flex items-center justify-center">
+              <Play className="h-4 w-4 text-muted-foreground opacity-30" />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>Sem vídeo</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     );
   }
 
   const thumbnail = getVideoThumbnail(url);
 
   return (
-    <VideoPlayerDialog
-      url={url}
-      creativeId={creativeId}
-      trigger={
-        <div className="h-10 w-10 rounded bg-muted flex items-center justify-center cursor-pointer hover:bg-muted/80 transition-colors relative group overflow-hidden">
-          {thumbnail ? (
-            <>
-              <img
-                src={thumbnail}
-                alt="Video thumbnail"
-                className="w-full h-full object-cover rounded"
-                onError={(e) => {
-                  // Fallback to play icon if thumbnail fails to load
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-              <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                <Play className="h-4 w-4 text-white fill-white" />
-              </div>
-            </>
-          ) : (
-            <div className="flex items-center justify-center w-full h-full">
-              <Play className="h-4 w-4 text-primary group-hover:scale-110 transition-transform" />
-            </div>
-          )}
-        </div>
-      }
-    />
+    <TooltipProvider delayDuration={100}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div>
+            <VideoPlayerDialog
+              url={url}
+              creativeId={creativeId}
+              trigger={
+                <div className="h-10 w-10 rounded bg-muted flex items-center justify-center cursor-pointer hover:bg-muted/80 transition-colors relative group overflow-hidden">
+                  {thumbnail ? (
+                    <>
+                      <img
+                        src={thumbnail}
+                        alt="Video thumbnail"
+                        className="w-full h-full object-cover rounded"
+                        onError={(e) => {
+                          // Fallback to play icon if thumbnail fails to load
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Play className="h-4 w-4 text-white fill-white" />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex items-center justify-center w-full h-full">
+                      <Play className="h-4 w-4 text-primary group-hover:scale-110 transition-transform" />
+                    </div>
+                  )}
+                </div>
+              }
+            />
+          </div>
+        </TooltipTrigger>
+        <TooltipContent>Clique para assistir</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
